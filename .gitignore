@@ -1,3 +1,26 @@
+# macOS metadata
 .DS_Store
+._*
+.AppleDouble/
+.LSOverride
+
+# Temporary files, editor recovery files, and installer backups
 *.tmp
+*.swp
+*.swo
+*~
 *.warp-backup.*
+
+# Local logs and an optional repository-local runtime state directory
+*.log
+/.workflow-manager/
+
+# Local environment secrets; keep shareable examples trackable
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Generated test executables and compiled AppleScript (sources remain tracked)
+/tests/lua-runner
+*.scpt
