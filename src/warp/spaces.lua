@@ -1,4 +1,3 @@
-local U=require('warp.util')
 local M={}
 local function available()
   local ids={}; for uuid,list in pairs(hs.spaces.allSpaces() or {}) do for _,id in ipairs(list) do ids[id]=uuid end end; return ids
@@ -35,20 +34,8 @@ function M.navigate(entries, direction)
   for i,e in ipairs(filtered) do if e.id==current then index=i; break end end
   return hs.spaces.gotoSpace(filtered[((index-1+direction)%#filtered)+1].id)
 end
-function M.primary(workflow, entries,live,outcomes)
-  if workflow.primary=='finder' then
-    -- Finder failure must not turn the registry's synthetic desktop into an
-    -- unsolicited Mission Control jump. Successful focus uses a real role only.
-    if outcomes and outcomes.finder~=true then
-      U.log('INFO','Finder primary focus skipped: restore failed'); return true
-    end
-    for _,role in ipairs({'left','right'}) do
-      for _,item in ipairs(live) do
-        if item.adapter=='finder' and item.identity==role then item.win:focus(); return true end
-      end
-    end
-    U.log('INFO','Finder primary focus skipped: no correlated role window'); return true
-  end
+function M.primary(workflow, entries,live)
+  if workflow.primary=='none' then return true end
   for _,item in ipairs(live) do
     if item.adapter==workflow.primary then
       local ids=hs.spaces.windowSpaces(item.win:id()) or {}

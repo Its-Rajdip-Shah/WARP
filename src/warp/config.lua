@@ -13,6 +13,7 @@ end
 function M.validate(input, options)
   local ok, result = pcall(function()
     local workflows, list, selectors, roots, sessions = U.copy(input), {}, {}, {}, {}
+    local warnings={}
     assert(type(workflows) == 'table', 'workflows must return a table')
     for id, w in pairs(workflows) do
       assert(type(id) == 'string' and id:match('^[a-z][a-z0-9_-]*$'), 'invalid workflow ID')
@@ -23,7 +24,9 @@ function M.validate(input, options)
       w.id = id; w.coldAfterMinutes = w.coldAfterMinutes or 30
       assert(type(w.coldAfterMinutes) == 'number' and w.coldAfterMinutes > 0 and w.coldAfterMinutes < math.huge, 'invalid coldAfterMinutes')
       assert(w.pinned == nil or type(w.pinned) == 'boolean', 'pinned must be boolean')
-      if w.finder then keys(w.finder,{leftRoot=true},'finder'); w.finder.leftRoot = U.path(w.finder.leftRoot) end
+      local deprecatedFinder=w.finder~=nil or w.primary=='finder'
+      w.finder=nil -- Legacy values are ignored, including malformed old blocks.
+      if w.primary=='finder' then w.primary='none' end
       if w.safari then
         keys(w.safari,{tabGroup=true,menuPath=true},'safari'); assert(str(w.safari.tabGroup), 'tabGroup required')
         if w.safari.menuPath then array(w.safari.menuPath,'menuPath'); assert(#w.safari.menuPath > 0, 'empty menuPath'); for _, v in ipairs(w.safari.menuPath) do assert(str(v),'invalid menuPath') end end
@@ -33,7 +36,7 @@ function M.validate(input, options)
         local s = w.terminal.tmuxSession
         assert(str(s) and s:match('^[a-zA-Z0-9_-]+$'), 'unsafe tmux session name')
         assert(not sessions[s], 'tmux session must have one workflow owner'); sessions[s] = id
-        w.terminal.root = U.path(w.terminal.root or (w.finder and w.finder.leftRoot) or os.getenv('HOME'))
+        w.terminal.root = U.path(w.terminal.root or os.getenv('HOME'))
         if w.terminal.tmuxPath then w.terminal.tmuxPath = U.path(w.terminal.tmuxPath) end
       end
       if w.vscode then
@@ -63,10 +66,18 @@ function M.validate(input, options)
         assert(app.cold == nil or app.cold == 'preserve' or app.cold == 'resource_aware', 'unsupported cold policy')
       end
       w.primary = w.primary or 'desktop'
-      assert(w.primary == 'desktop' or (w.primary == 'finder' and w.finder) or (w.primary == 'safari' and w.safari) or (w.primary == 'vscode' and w.vscode) or (w.primary == 'terminal' and w.terminal) or seen[w.primary], 'primary must reference a configured adapter or desktop')
-      w.spaceOrder = w.spaceOrder or {'desktop','finder','safari','figma','vscode','terminal','docker'}
+      assert(w.primary == 'none' or w.primary == 'desktop' or (w.primary == 'safari' and w.safari) or (w.primary == 'vscode' and w.vscode) or (w.primary == 'terminal' and w.terminal) or seen[w.primary], 'primary must reference a configured adapter, desktop, or none')
+      w.spaceOrder = w.spaceOrder or {'desktop','safari','figma','vscode','terminal','docker'}
       array(w.spaceOrder,'spaceOrder'); local order = {}
-      for _, role in ipairs(w.spaceOrder) do assert(({desktop=true,finder=true,safari=true,figma=true,vscode=true,terminal=true,docker=true})[role] and not order[role], 'invalid/duplicate spaceOrder role'); order[role] = true end
+      local spaceOrder={}
+      for _, role in ipairs(w.spaceOrder) do
+        if role=='finder' then deprecatedFinder=true else
+          assert(({desktop=true,safari=true,figma=true,vscode=true,terminal=true,docker=true})[role] and not order[role], 'invalid/duplicate spaceOrder role')
+          order[role]=true; spaceOrder[#spaceOrder+1]=role
+        end
+      end
+      w.spaceOrder=spaceOrder
+      if deprecatedFinder then warnings[#warnings+1]="workflow '"..id.."' contains deprecated finder config; Finder is global and the config is ignored (Finder primary becomes none)" end
       list[#list+1] = w
     end
     table.sort(list,function(a,b) return tonumber(a.key) < tonumber(b.key) end)
@@ -81,7 +92,8 @@ function M.validate(input, options)
       assert(#settings.navigation.mods > 0 and str(settings.navigation.next) and str(settings.navigation.previous) and settings.navigation.next ~= settings.navigation.previous, 'invalid navigation keys')
       assert(not (mods.ctrl and mods.alt and mods.cmd), 'navigation must not use the wheel chord')
     end
-    return {workflows=workflows,list=list,selectors=selectors,settings=settings}
+    table.sort(warnings)
+    return {workflows=workflows,list=list,selectors=selectors,settings=settings,warnings=warnings}
   end)
   if ok then return result end
   return nil, tostring(result)
@@ -96,6 +108,8 @@ function M.load(root)
     return read(root .. '/config/workflows.lua'), opts
   end)
   if not ok then return nil, data end
-  return M.validate(data, settings)
+  local config,err=M.validate(data, settings)
+  if config then for _,warning in ipairs(config.warnings) do U.log('WARN',warning) end end
+  return config,err
 end
 return M

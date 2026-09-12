@@ -5,7 +5,7 @@ local U=require('warp.util')
 local C=require('warp.config')
 local function basic() return {one={label='One',key='1',vscode={allowedRoots={'~/One'}}},two={label='Two',key='2'}} end
 local cfg=assert(C.validate(basic()))
-for _,name in ipairs({'finder','safari','vscode','terminal','figma','docker'}) do assert(require('warp.adapters.'..name).new) end
+for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do assert(require('warp.adapters.'..name).new) end
 local logs={}
 hs={fs={attributes=function() return nil end},json={},timer={},application={},spaces={},screen={},window={},eventtap={}}
 test('configuration: defaults, stable IDs, normalized roots',function() assert(cfg.list[1].id=='one'); assert(cfg.workflows.one.coldAfterMinutes==30); assert(cfg.workflows.one.vscode.allowedRoots[1]==os.getenv('HOME')..'/One') end)
@@ -15,7 +15,7 @@ test('configuration: duplicate number, nonnumeric, unknown global app rejected',
 end)
 test('configuration: overlapping roots, bad paths, injected session, unsupported policies rejected',function()
   local b=basic(); b.two.vscode={allowedRoots={'~/One/sub'}}; assert(not C.validate(b))
-  b=basic(); b.one.finder={leftRoot='relative'}; assert(not C.validate(b))
+  b=basic(); b.one.terminal={tmuxSession='one',root='relative'}; assert(not C.validate(b))
   b=basic(); b.one.terminal={tmuxSession='a; rm'}; assert(not C.validate(b))
   b=basic(); b.one.apps={{id='docker',cold='kill'}}; assert(not C.validate(b))
 end)
@@ -149,7 +149,7 @@ end)
 local originalState=package.loaded['warp.state']
 package.loaded['warp.state']={new=function(config) local store={data=State.sanitize({version=1,workflows={}},config)}; function store:save() return true end; return store end}
 local restored={}
-for _,name in ipairs({'safari','finder','vscode','terminal','figma','docker'}) do
+for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do
   package.loaded['warp.adapters.'..name]={new=function() return {id=name,discover=function() return {} end,restore=function(_,w,_,ctx,done)
     ctx:after(0.5,function() restored[#restored+1]=w.id..':'..name; if name=='figma' then done(false,'unavailable') else done(true) end end)
   end,cold=function() end} end}
@@ -167,19 +167,6 @@ test('manager rapid switch, partial failure, single ACTIVE and lifecycle',functi
   assert(#m.errors==1 and m.errors[1]:find('figma',1,true))
   assert(m:makeCold('one')); assert(m.store.data.workflows.one.lifecycle=='COLD'); assert(not m:makeCold('two'))
   m:stop(); assert(not m:switchTo('one')); flush()
-end)
-test('failed Finder restore continues the workflow without Mission Control fallback',function()
-  local factory=package.loaded['warp.adapters.finder']
-  package.loaded['warp.adapters.finder']={new=function() return {id='finder',discover=function() return {} end,restore=function(_,_,_,_,done) done(false,'Finder enumeration denied') end} end}
-  local config=assert(C.validate({one={label='One',key='1',finder={leftRoot='/tmp'},primary='finder'}}))
-  local gotoSpace=hs.spaces.gotoSpace; local jumps=0
-  hs.spaces.gotoSpace=function() jumps=jumps+1; return true end
-  restored={}
-  local m=require('warp.manager').new(config); assert(m:switchTo('one')); flush()
-  assert(m.store.data.active=='one' and not m.switching and jumps==0)
-  local continued=false; for _,entry in ipairs(restored) do if entry=='one:docker' then continued=true end end
-  assert(continued and m.errors[1]:find('Finder enumeration denied',1,true))
-  m:stop(); hs.spaces.gotoSpace=gotoSpace; package.loaded['warp.adapters.finder']=factory
 end)
 test('manager start/stop cycles clean owned taps, filter, watcher, hotkeys and timer',function()
   local filters,watchers,keys,periodic,menus={},{},{},{},{}

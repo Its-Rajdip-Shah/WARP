@@ -14,12 +14,6 @@ else
 fi
 "$LUA_BIN" tests/syntax.lua
 "$LUA_BIN" tests/unit.lua
-WARP_TEST_ARTIFACT_DIR="$BUILD_DIR" "$LUA_BIN" tests/finder.lua
-if command -v osacompile >/dev/null 2>&1; then
-  for SOURCE in "$BUILD_DIR"/*.applescript; do
-    osacompile -o "$SOURCE.scpt" "$SOURCE"
-  done
-  echo 'PASS: Finder enumeration/reuse/creation AppleScript compile (not executed)'
-fi
+"$LUA_BIN" tests/finder_global.lua
 bash -n install.sh tests/run.sh tests/install.sh
 bash tests/install.sh

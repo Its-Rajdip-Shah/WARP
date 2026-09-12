@@ -6,7 +6,7 @@ local M={}
 function M.new(config)
   local self={config=config,store=require('warp.state').new(config),generation=0,switching=false,errors={},hotkeys={},stopped=false}
   self.adapters={}
-  for _,name in ipairs({'safari','finder','vscode','terminal','figma','docker'}) do
+  for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do
     self.adapters[#self.adapters+1]=require('warp.adapters.'..name).new(config,self.store.data.shared)
   end
   function self:discover(id)
@@ -26,8 +26,6 @@ function M.new(config)
         state.windows[key]=W.capture(item.win,item.adapter,item.identity,state.windows[key])
       end)
     end
-    -- Shared Finder layout is learned only from the active context, never from a warm/cold workflow.
-    if id==self.store.data.active then for _,a in ipairs(self.adapters) do if a.checkpoint then U.try(a.id..' checkpoint',function() a:checkpoint(config.workflows[id],state) end) end end end
     U.try('Space registry',function() Spaces.rebuild(config.workflows[id],state,live) end)
     self.store:save(); U.log('INFO','Checkpoint complete: '..id); return true
   end
@@ -55,7 +53,7 @@ function M.new(config)
       self:checkpoint(old)
       if old~=id then
         local state=self.store.data.workflows[old]; state.lifecycle='WARM'; state.lastActive=hs.timer.secondsSinceEpoch()
-        for _,item in ipairs(self:discover(old)) do if item.adapter~='safari' and item.adapter~='finder' then U.try(item.adapter..' warm',function() W.warm(item.win) end) end end
+        for _,item in ipairs(self:discover(old)) do if item.adapter~='safari' then U.try(item.adapter..' warm',function() W.warm(item.win) end) end end
       end
     end
     -- Commit target before asynchronous restore: a new request checkpoints this partial context.
@@ -63,7 +61,6 @@ function M.new(config)
     local state=self.store.data.workflows[id]; state.lifecycle='ACTIVE'; state.lastActive=hs.timer.secondsSinceEpoch(); state.retained=nil
     self.store:save()
     local index,advance=0,nil
-    local outcomes={}
     local ctx
     local function fail(message) self.errors[#self.errors+1]=message; U.log('ERROR',message) end
     ctx=Request.new(self.generation,function() return self.generation end,function(err) fail(err); advance() end)
@@ -74,7 +71,7 @@ function M.new(config)
       local live=self:discover(id)
       local ok,result=U.try('primary Space',function()
         Spaces.rebuild(target,state,live)
-        local success,why=Spaces.primary(target,state.spaces,live,outcomes); if not success then fail('Space navigation: '..tostring(why)) end
+        local success,why=Spaces.primary(target,state.spaces,live); if not success then fail('Space navigation: '..tostring(why)) end
       end)
       if not ok then fail(tostring(result)) end
       self.switching=false; self.store:save()
@@ -88,7 +85,6 @@ function M.new(config)
       local called=false
       local function done(ok,err)
         if called or not ctx:valid() then return end; called=true
-        outcomes[adapter.id]=ok==true
         if not ok then fail(adapter.id..' restore: '..tostring(err)) end
         -- Yield between adapters so a newer key event can supersede this request.
         ctx:after(0,advance)
@@ -108,22 +104,6 @@ function M.new(config)
   end
   function self:diagnostics()
     return U.copy({loaded=not self.stopped,active=self.store.data.active,switching=self.switching,generation=self.generation,errors=self.errors,statePath=self.store.path,persistenceEnabled=self.store.writable,accessibility=hs.accessibilityState(),secureInput=hs.eventtap.isSecureInputEnabled(),state=self.store.data,config=config})
-  end
-  function self:debugFinder()
-    if self.stopped then return false,'WARP stopped' end
-    if self.finderDebug then self.finderDebug:cancel() end
-    local ctx=Request.new(1,function() return self.stopped and 0 or 1 end,function(err) U.log('ERROR','Finder diagnostics: '..err) end)
-    self.finderDebug=ctx
-    for _,adapter in ipairs(self.adapters) do
-      if adapter.id=='finder' then
-        adapter:debug(ctx,function(result)
-          U.log('INFO','Finder diagnostics (read-only): '..hs.inspect(result))
-          ctx:cancel(); if self.finderDebug==ctx then self.finderDebug=nil end
-        end)
-        return true
-      end
-    end
-    return false,'Finder adapter unavailable'
   end
   function self:start()
     W.start()
@@ -160,7 +140,6 @@ function M.new(config)
     if not self.switching and self.store.data.active then self:checkpoint() end
     self.stopped=true; self.generation=self.generation+1
     if self.request then self.request:cancel() end
-    if self.finderDebug then self.finderDebug:cancel(); self.finderDebug=nil end
     self.switching=false
     if self.wheel then self.wheel:stop() end
     if self.lifecycle then self.lifecycle:stop() end

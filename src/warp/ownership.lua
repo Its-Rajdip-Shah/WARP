@@ -1,5 +1,5 @@
 local U = require('warp.util')
-local M = {bundles={vscode='com.microsoft.VSCode',terminal='com.apple.Terminal',figma='com.figma.Desktop',docker='com.docker.docker',finder='com.apple.finder',safari='com.apple.Safari'}}
+local M = {bundles={vscode='com.microsoft.VSCode',terminal='com.apple.Terminal',figma='com.figma.Desktop',docker='com.docker.docker',safari='com.apple.Safari'}}
 function M.owner(config,path)
   for id,w in pairs(config.workflows) do for _,root in ipairs(w.vscode and w.vscode.allowedRoots or {}) do if U.under(path,root) then return id end end end
 end
