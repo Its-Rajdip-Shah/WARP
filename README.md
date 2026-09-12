@@ -4,7 +4,7 @@
 
 > Switching from one project to another? WARP automatically swaps your open apps, windows, tabs, files, terminals, and Spaces to match the new task — then restores everything when you switch back.
 
-WARP is a lightweight macOS workflow manager built with Hammerspoon and Lua. A workflow describes a project’s Finder root, Safari Tab Group, VS Code projects, tmux session, and supporting applications. Dynamic window layouts and Space mappings live separately from configuration.
+WARP is a lightweight macOS workflow manager built with Hammerspoon and Lua. A workflow describes a project’s Safari Tab Group, VS Code projects, tmux session, and supporting applications. Dynamic window layouts and Space mappings live separately from configuration.
 
 **Status: conservative v1 implementation, awaiting live macOS acceptance testing.** The promise above describes the intended experience. Safari automation is conditional, VS Code requires a title marker, and cold cleanup currently preserves resources rather than claiming it can safely close them. Read the [implementation report](docs/implementation-report.md) for exact behavior, limitations, and staged tests.
 
@@ -30,7 +30,7 @@ At most one workflow is ACTIVE. No workflow activates automatically on a fresh i
 
 - macOS with a working Hammerspoon installation and Accessibility permission. This implementation was checked against the locally installed Hammerspoon APIs; no minimum macOS version or compatibility matrix has been certified.
 - Enable **Displays have separate Spaces** for the intended multi-monitor behavior. Space navigation uses Hammerspoon’s experimental Mission Control integration and can visibly animate.
-- Allow Hammerspoon/its AppleScript helper to automate Finder and Terminal when macOS prompts.
+- Allow Hammerspoon/its AppleScript helper to automate Terminal when macOS prompts.
 - Safari with existing named Tab Groups; its sidebar should be visible for the default Accessibility strategy.
 - Optional VS Code, Terminal + tmux, Figma, Docker Desktop, according to your workflows.
 - No Node service, Python daemon, database, Electron application, or additional resident WARP process.
@@ -61,13 +61,12 @@ Edit `config/workflows.lua`, then reload Hammerspoon using its menu. Loading WAR
 return {
   study = {
     label = 'Study', key = '1',
-    finder = {leftRoot = '~/Projects/Study'},
     safari = {tabGroup = 'Study'},
     vscode = {
       allowedRoots = {'~/Projects/Study'},
       openRoots = {'~/Projects/Study/project-a'}, -- optional initial projects
     },
-    terminal = {tmuxSession = 'study'},
+    terminal = {tmuxSession = 'study', root = '~/Projects/Study'},
     apps = {{id = 'figma', preferredFullscreen = true}},
     primary = 'figma',
     coldAfterMinutes = 30,
@@ -75,7 +74,9 @@ return {
 }
 ```
 
-The shipped ELEC3609 and SOFT2412 entries are examples: **edit their paths before switching**. Missing folders are reported; WARP does not create project folders. Omit an adapter’s field to disable it. Supported workflow apps are `figma` and `docker`; ChatGPT and other global apps cannot be declared as managed applications.
+The shipped ELEC3609 and SOFT2412 entries are minimal selectors with `primary = 'none'` and no managed apps. Add the desired adapter fields and real paths when ready. Omit an adapter’s field to disable it. Supported workflow apps are `figma` and `docker`. Finder and ChatGPT are GLOBAL and entirely unmanaged.
+
+Legacy `finder` settings are ignored with one warning per workflow per load; `primary = 'finder'` becomes `'none'`, skipping activation focus and Space navigation. Legacy Finder Space ordering and saved state are discarded. Set `terminal.root` explicitly if it previously inherited a Finder root; its default is now your home directory.
 
 `config/settings.lua` controls persistence, notifications, and navigation:
 
@@ -87,7 +88,7 @@ return {
 }
 ```
 
-Set `navigation = false` to disable those hotkeys. Configuration is trusted local Lua data, loaded without `hs`, `os`, or `require`; do not put procedural workflow actions in it. Validation rejects unknown fields, duplicate numeric selectors, overlapping ownership roots across workflows, unsafe session names, and unsupported lifecycle policies. See the [complete schema](docs/implementation-report.md#5-workflow-config-schema).
+Set `navigation = false` to disable those hotkeys. Configuration is trusted local Lua data, loaded without `hs`, `os`, or `require`; do not put procedural workflow actions in it. Validation rejects unknown fields, duplicate numeric selectors, overlapping ownership roots across workflows, unsafe session names, and unsupported lifecycle policies. See the [complete schema](docs/implementation-report.md#configuration).
 
 ### VS Code setup
 
@@ -109,7 +110,6 @@ Create your Tab Groups manually and show the sidebar. WARP looks for a unique ma
 
 | Adapter | Implemented | Limits |
 |---|---|---|
-| Finder | Enumerates Finder’s own windows, reuses existing left/right roles, changes their directories without moving/resizing, creates only missing roles | Prefers active-desktop normal windows; adopts leftmost/rightmost and leaves extras alone. AppleScript IDs are separate from Hammerspoon metadata. Tabs/full-screen Finder reconstruction remain limited. |
 | Safari | Shared app; exact sidebar-row selection or configured menu path, then verification | Version/UI dependent. Hidden sidebar or ambiguous rows produce a partial failure. |
 | VS Code | Full-path ownership, multiple distinct projects, warm minimize, reopen, normal/full-screen layout | Requires title marker; does not close editors automatically. |
 | Terminal/tmux | Creates missing detached session, opens a dedicated viewer, reuses its title marker, records pane commands | Viewer title must remain reserved; detached/reused viewers are not reliably detectable. Sessions and processes always survive. |
@@ -122,7 +122,6 @@ In the Hammerspoon console:
 
 ```lua
 WARP.status()                     -- copied config/state, errors, permission status
-WARP.debugFinder()                -- asynchronous, read-only window/adoption diagnostics
 hs.inspect(WARP.status())         -- readable diagnostic output
 WARP.previewWheel(true)           -- number selection logs only; no workflow switch
 WARP.previewWheel(false)          -- enable real selection after wheel tests
@@ -143,9 +142,9 @@ Run local tests without touching the live desktop:
 bash tests/run.sh
 ```
 
-Tests use Lua if available, otherwise a temporary C host linked to Hammerspoon’s bundled Lua (requires Apple command-line developer tools). They check syntax, pure logic, mocked asynchronous GUI behavior, persistence, and installer preservation. They do not establish live GUI compatibility. Follow the [manual acceptance plan](docs/implementation-report.md#15-manual-test-plan) starting with the wheel alone.
+Tests use Lua if available, otherwise a temporary C host linked to Hammerspoon’s bundled Lua (requires Apple command-line developer tools). They check syntax, pure logic, mocked asynchronous GUI behavior, persistence, and installer preservation. They do not establish live GUI compatibility. Follow the [manual acceptance plan](docs/implementation-report.md#manual-acceptance) starting with the wheel alone.
 
-Finder adopts existing windows before considering creation. Reused windows keep their current frames, display, and Space; saved layouts apply only to reconstructed windows. A failed Finder-primary restore skips focus/navigation instead of opening Mission Control. After reload, run `WARP.debugFinder()` before your next live retest; it prints discovery sources, separate IDs, geometry, Space hints, and proposed roles without changing Finder.
+Finder is untouched throughout activation, checkpoint, WARM, COLD and reload. WARP has no Finder discovery, AppleScript, role assignment, window mutation, saved layout, primary focus, or Space registration. `WARP.debugFinder()` has been removed.
 
 Logs use `[WARP][INFO|WARN|ERROR]` in the Hammerspoon console. State is a versioned JSON file at `~/.workflow-manager/state.json`, written using a same-directory temporary file and rename. Runtime IDs are discarded on reload; invalid state is preserved and disables further persistence until repaired. State is not encrypted. Back it up if project metadata matters.
 
@@ -157,4 +156,4 @@ A newer request cancels older WARP timers/helpers and invalidates callbacks. Alr
 
 Native full-screen windows are tracked by their current Space, not moved into an old saved Space. Display migration exits full-screen only when an available saved display differs, moves the normal window, re-enters full-screen, and discovers the new Space. Missing displays fall back to an available display. Some windows may remain undiscoverable until their Space has been visited after a reload.
 
-The original [architecture document](docs/workflow-manager.md) is preserved. The [implementation report](docs/implementation-report.md) documents actual behavior and deviations; design goals are not claims of completed platform support.
+The [architecture document](docs/workflow-manager.md) defines Finder as GLOBAL. The [implementation report](docs/implementation-report.md) documents actual behavior and deviations; design goals are not claims of completed platform support.

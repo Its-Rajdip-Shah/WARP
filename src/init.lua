@@ -20,7 +20,6 @@ api.unpin=function(id) return manager:pin(id,false) end
 api.nextSpace=function() return manager:navigate(1) end
 api.previousSpace=function() return manager:navigate(-1) end
 api.status=function() return manager:diagnostics() end
-api.debugFinder=function() return manager:debugFinder() end
 api.stop=function() return manager:stop() end
 api.reload=function() return dofile(root..'/src/init.lua') end
 api.previewWheel=function(enabled) manager.wheel.preview=enabled~=false end

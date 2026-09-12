@@ -17,7 +17,8 @@ function M.stop()
   if filter then filter:unsubscribeAll(); filter:pause(); filter=nil end
 end
 function M.list(adapter)
-  local app=U.app(O.bundles[adapter]); if not app then return {} end
+  local bundle=O.bundles[adapter]; if not bundle then return {} end
+  local app=U.app(bundle); if not app then return {} end
   local out,seen={},{}
   local function add(win)
     if win and win:id() and not seen[win:id()] and win:application() and win:application():bundleID()==O.bundles[adapter] and win:isStandard() then
@@ -32,54 +33,6 @@ function M.list(adapter)
     if ok and ax then for _,element in ipairs(ax:attributeValue('AXWindows') or {}) do add(element:asHSWindow()) end end
   end
   return out
-end
--- Finder-specific evidence collection. Keep source failures independent and retain
--- rejected AX windows for diagnostics; do not change discovery for other adapters.
-function M.finderEvidence()
-  local records,byID,errors={},{},{}
-  local function attempt(source,fn)
-    local ok,err=pcall(fn)
-    if not ok then errors[#errors+1]=source..': '..tostring(err) end
-  end
-  local function add(win,source)
-    if not win then return end
-    attempt(source..' window',function()
-      local app=win:application()
-      if not app or app:bundleID()~=O.bundles.finder then return end
-      local id=win:id(); if not id then return end
-      local r=byID[id]
-      if not r then
-        local f=win:frame(); local screen=win:screen()
-        r={win=win,hsID=id,title=win:title(),frame={x=f.x,y=f.y,w=f.w,h=f.h},
-          standard=win:isStandard(),fullscreen=win:isFullScreen(),screenUUID=screen and screen:getUUID(),sources={}}
-        byID[id]=r; records[#records+1]=r
-        attempt('Finder windowSpaces',function() r.spaceIDs=hs.spaces.windowSpaces(id) end)
-      end
-      r.sources[source]=true
-    end)
-  end
-  attempt('window filter',function() if filter then for _,win in ipairs(filter:getWindows()) do add(win,'window filter') end end end)
-  local app=U.app(O.bundles.finder)
-  if app then
-    attempt('application',function() for _,win in ipairs(app:allWindows()) do add(win,'application') end end)
-    attempt('AX',function()
-      local ax=hs.axuielement.applicationElement(app)
-      for _,element in ipairs(ax:attributeValue('AXWindows') or {}) do
-        attempt('AX conversion',function()
-          local win=element:asHSWindow()
-          if win then add(win,'AX') else
-            local p,s=element:attributeValue('AXPosition'),element:attributeValue('AXSize')
-            records[#records+1]={title=element:attributeValue('AXTitle'),
-              frame=p and s and {x=p.x,y=p.y,w=s.w,h=s.h} or nil,
-              standard=element:attributeValue('AXSubrole')=='AXStandardWindow',
-              fullscreen=element:attributeValue('AXFullScreen'),sources={AX=true},
-              reason='AX element could not be converted to a Hammerspoon window'}
-          end
-        end)
-      end
-    end)
-  end
-  return records,errors,app and app:pid()
 end
 function M.key(adapter,identity) return adapter .. ':' .. identity end
 function M.capture(win,adapter,identity,previous)

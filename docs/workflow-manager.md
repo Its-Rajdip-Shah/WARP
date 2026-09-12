@@ -1,3 +1,5 @@
+<!-- Current Finder policy: GLOBAL/unmanaged. Other platform goals remain subject to the implementation report. -->
+
 # macOS Workflow Manager — Final Concrete Implementation Plan
 
 **Status:** Finalized v1 design  
@@ -31,25 +33,8 @@ These choices are now part of the v1 design.
 - User switches ChatGPT project/thread manually.
 
 ## Finder
-There are two standard Finder windows:
 
-### Left Finder
-- Workflow-controlled.
-- Shows the active workflow's relevant rootokay /project folder.
-
-Example:
-```text
-SOFT2412 → ~/Uni/SOFT2412
-ELEC3609 → ~/Uni/ELEC3609
-```
-
-### Right Finder
-- GLOBAL.
-- Always starts from `~/Downloads`.
-- Acts as a "yo-yo" navigation window:
-  - go elsewhere temporarily;
-  - use/copy/move something;
-  - restore back to Downloads on workflow activation.
+Finder is GLOBAL and entirely unmanaged. Its windows, directories, tabs, layout, focus and Spaces remain under manual control. No Finder adapter or workflow ownership exists.
 
 ## Full-screen / Spaces
 - Native macOS full-screen is part of the design.
@@ -68,7 +53,6 @@ It is not just:
 ```text
 open Safari
 open VS Code
-open Finder
 ```
 
 It manages:
@@ -77,7 +61,6 @@ It manages:
 workflow
 ├── app/window membership
 ├── Safari context
-├── Finder context
 ├── VS Code project windows
 ├── terminal sessions
 ├── Docker state
@@ -138,8 +121,6 @@ The workflow currently being used.
 Properties:
 
 - its Safari Tab Group is active;
-- left Finder points at its workflow root;
-- right Finder is available from Downloads;
 - its VS Code windows are available;
 - its terminal/tmux state is available;
 - workflow-specific apps are available;
@@ -334,14 +315,7 @@ Switching workflows changes Safari's internal context.
 
 ## Finder
 
-Finder remains a shared application.
-
-The two main windows have fixed roles:
-
-```text
-LEFT  → workflow context
-RIGHT → global navigation / Downloads
-```
+Finder is GLOBAL and entirely unmanaged. Its windows, directories, tabs, layout, focus and Spaces remain under manual control. No Finder adapter or workflow ownership exists.
 
 ---
 
@@ -395,8 +369,6 @@ Example SOFT2412:
 
 ```text
 Desktop Space
-├── left Finder
-├── right Finder
 └── supporting windows
 
 Full-screen Space
@@ -413,8 +385,6 @@ Example ELEC3609:
 
 ```text
 Desktop Space
-├── left Finder
-├── right Finder
 └── supporting windows
 
 Full-screen Space
@@ -540,9 +510,6 @@ Example:
 ```yaml
 ELEC3609:
 
-  finder:
-    left_root: "~/Uni/ELEC3609"
-
   safari:
     tab_group: "ELEC3609"
 
@@ -576,10 +543,6 @@ global:
   apps:
     ChatGPT:
       ownership: global
-
-  finder:
-    right_window:
-      default_root: "~/Downloads"
 
   windows:
     music:
@@ -628,9 +591,6 @@ Example saved state:
   "state": "warm",
   "last_active": "2026-09-12T13:45:00+10:00",
 
-  "finder": {
-    "left_root": "/Users/me/Uni/SOFT2412"
-  },
 
   "safari": {
     "tab_group": "SOFT2412"
@@ -742,101 +702,23 @@ Its Tab Group determines context.
 
 ## Finder
 
-Shared.
-
-Left Finder context determines workflow.
-
-Right Finder is always global.
+Finder is GLOBAL and entirely unmanaged. Its windows, directories, tabs, layout, focus and Spaces remain under manual control. No Finder adapter or workflow ownership exists.
 
 ---
 
-# 16. Finder exact behavior
+# 16. Finder global policy
 
-## Left Finder
+Finder is GLOBAL, like ChatGPT. Activation, checkpoint, WARM, COLD, reload and shutdown perform no Finder operations. WARP does not enumerate or assign its windows, navigate directories, create or close windows, minimize, resize, move, restore, focus, or register Finder Spaces. There are no left/right roles or Downloads reset policy.
 
-The left Finder window always represents the active workflow.
-
-Example switch:
-
-```text
-SOFT2412
-~/Uni/SOFT2412
-
-↓ switch
-
-ELEC3609
-~/Uni/ELEC3609
-```
-
-The manager reuses the same Finder window where possible.
-
-If missing:
-
-```text
-create Finder window
-→ navigate to workflow root
-→ put in saved layout
-```
+Legacy `finder` config is ignored with one deprecation warning per affected workflow per load. Legacy `primary = "finder"` becomes `primary = "none"`; this skips activation focus and Space navigation. Old `finder` space-order entries are removed. Other configured adapters continue normally. Explicit navigation hotkeys retain the general desktop registry behavior, independent of Finder.
 
 ---
 
-## Right Finder
+# 17. Finder state migration
 
-The right Finder window is global.
+State version 1 remains supported. Loading drops `shared.finder`, Finder window records and Finder retention reasons. Workflow-local Finder fields are not copied. Runtime Space entries are rebuilt from managed windows and the general desktop; Finder windows supply no entries. Other workflow state remains intact. Normal atomic saves persist the cleaned state; corrupt unrelated data retains the existing preservation policy.
 
-Its job is temporary navigation.
-
-Example:
-
-```text
-starts at Downloads
-↓
-user goes to Desktop
-↓
-copies file
-↓
-goes somewhere else
-```
-
-On workflow activation, v1 resets it to:
-
-```text
-~/Downloads
-```
-
-This preserves its role as a predictable "yo-yo" window.
-
----
-
-# 17. Finder layout
-
-If both Finder windows are on a normal desktop Space:
-
-```text
-LEFT Finder
-→ left side
-
-RIGHT Finder
-→ right side
-```
-
-Their latest user-adjusted frames are saved.
-
-Example:
-
-```text
-left  = 55%
-right = 45%
-```
-
-If user changes the split:
-
-```text
-left = 65%
-right = 35%
-```
-
-checkpoint stores the new layout.
+Set `terminal.root` explicitly if it previously relied on a Finder root; the default is now the home directory. Finder layout and directories are never checkpointed or restored.
 
 ---
 
@@ -1377,8 +1259,6 @@ This is where normal non-full-screen workflow windows may live.
 Typical content:
 
 ```text
-left Finder
-right Finder
 small utility windows
 ```
 
@@ -1418,8 +1298,6 @@ Capture:
 
 ```text
 VS Code windows
-Finder left location
-Finder layout
 terminal/tmux association
 Docker UI state
 workflow-owned app state
@@ -1493,25 +1371,9 @@ Its context changes in place.
 
 ---
 
-## Phase 6 — Transform Finder
+## Phase 6 — Global apps
 
-Left:
-
-```text
-~/Uni/SOFT2412
-↓
-~/Uni/ELEC3609
-```
-
-Right:
-
-```text
-reset/navigate → ~/Downloads
-```
-
-Restore latest Finder left/right layout.
-
----
+Leave Finder and ChatGPT untouched.
 
 ## Phase 7 — Restore ELEC warm windows
 
@@ -1723,7 +1585,6 @@ workspace path
 document path
 tmux session name
 Safari Tab Group name
-Finder path
 ```
 
 Window IDs and Space IDs are runtime hints.
@@ -1754,7 +1615,6 @@ Example:
 
 ```text
 Safari ✓
-Finder ✓
 VS Code ✓
 Terminal ✓
 Figma ✗
@@ -1912,9 +1772,6 @@ workflows:
 
   SOFT2412:
 
-    finder:
-      left_root: "~/Uni/SOFT2412"
-
     safari:
       tab_group: "SOFT2412"
 
@@ -1938,9 +1795,6 @@ workflows:
 
 
   ELEC3609:
-
-    finder:
-      left_root: "~/Uni/ELEC3609"
 
     safari:
       tab_group: "ELEC3609"
@@ -1975,12 +1829,6 @@ global:
     ChatGPT:
       policy: untouched
 
-  finder:
-
-    right_window:
-      home: "~/Downloads"
-      reset_on_workflow_activation: true
-
   terminal:
     keep_tmux_on_cold: true
 
@@ -2009,7 +1857,6 @@ global:
     ├── ui.lua
     └── adapters/
         ├── safari.lua
-        ├── finder.lua
         ├── vscode.lua
         ├── terminal.lua
         ├── docker.lua
@@ -2145,7 +1992,7 @@ Terminal → tmux session
 Figma → config/document
 Docker UI → config
 Safari → shared
-Finder → shared
+Finder → GLOBAL / untouched
 ChatGPT → global
 ```
 
@@ -2336,19 +2183,9 @@ No app automation yet.
 
 ---
 
-## Phase 2 — Finder
+## Phase 2 — Global app exclusion
 
-Implement:
-
-```text
-left contextual Finder
-right global Downloads Finder
-layout learning
-```
-
-This validates shared contextual windows.
-
----
+Verify Finder is excluded from discovery, ownership, checkpoint, restore, cleanup and focus.
 
 ## Phase 3 — Safari
 
@@ -2456,11 +2293,8 @@ Example:
 Safari
 → SOFT2412 Tab Group
 
-Finder left
-→ ~/Uni/SOFT2412
-
-Finder right
-→ ~/Downloads
+Finder
+→ untouched/global
 
 VS Code
 → project-a
@@ -2486,11 +2320,8 @@ Example:
 Safari
 → ELEC3609 Tab Group
 
-Finder left
-→ ~/Uni/ELEC3609
-
-Finder right
-→ ~/Downloads
+Finder
+→ untouched/global
 
 Figma
 → restored
@@ -2515,8 +2346,7 @@ Expected:
 
 ```text
 Safari switches group
-Finder left switches
-Finder right → Downloads
+Finder remains untouched/global
 SOFT normal windows disappear
 SOFT full-screen Spaces remain registered but ignored
 ELEC windows restore
@@ -2605,20 +2435,9 @@ unless process exited naturally.
 
 ---
 
-## Test G — Finder yo-yo
+## Test G — Finder non-interference
 
-Use right Finder to browse elsewhere.
-
-Switch workflow.
-
-Expected:
-
-```text
-right Finder resets to Downloads
-left Finder becomes new workflow root
-```
-
----
+Manually arrange Finder windows and navigate to arbitrary directories. Switch workflows, checkpoint, make an inactive workflow COLD, and reload. Expect identical Finder directories, window count, geometry and fullscreen state; no Finder restore issues. Repeat with no Finder windows open: WARP creates none.
 
 ## Test H — unsaved VS Code file
 
@@ -2729,9 +2548,7 @@ checkpoints SOFT
 preserves tmux
 warms SOFT
 switches Safari group
-changes left Finder
-resets right Finder to Downloads
-restores ELEC apps
+changes restores ELEC apps
 re-registers ELEC full-screen Spaces
 restores normal layouts
 jumps directly to ELEC primary Space
@@ -2747,7 +2564,6 @@ hunt for Figma
 swipe five Spaces
 open wrong VS Code project
 re-find Terminal directory
-sort Finder windows
 ```
 
 ---
@@ -2770,8 +2586,8 @@ sort Finder windows
                            │
           ┌────────────────┼─────────────────┐
           │                │                 │
-        Safari           Finder          workflow apps
-       ELEC group      ELEC + Downloads      │
+        Safari       GLOBAL apps         workflow apps
+       ELEC group    (manual control)          │
                                               │
                                       workflow Space map
                                               │
@@ -2790,7 +2606,7 @@ The final invariants are:
 
 > **ChatGPT stays global in v1.**
 
-> **Finder left follows the workflow; Finder right always returns to Downloads.**
+> **Finder is GLOBAL. WARP never manages its windows, directories, layout, focus or Spaces.**
 
 > **Full-screen windows are treated as Spaces and tracked instead of forcibly moved.**
 

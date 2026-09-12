@@ -4,34 +4,26 @@ local function finite(n) return type(n) == 'number' and n == n and math.abs(n) <
 function M.sanitize(raw, config)
   assert(type(raw) == 'table' and raw.version == 1 and type(raw.workflows) == 'table', 'unsupported/corrupt state schema')
   local data = {version=1,active=nil,workflows={},shared={}}
-  if type(raw.shared) == 'table' and type(raw.shared.finder) == 'table' then
-    data.shared.finder={}
-    for _,role in ipairs({'left','right'}) do
-      local r=raw.shared.finder[role]
-      if type(r)=='table' and type(r.frame)=='table' then
-        local good=true
-        for _,axis in ipairs({'x','y','w','h'}) do if not finite(r.frame[axis]) then good=false end end
-        if good and r.frame.w>0 and r.frame.h>0 then
-          data.shared.finder[role]={frame=U.copy(r.frame),screenUUID=type(r.screenUUID)=='string' and r.screenUUID or nil}
-        end
-      end
-    end
-  end
+  if type(raw.shared)=='table' then data.shared=U.copy(raw.shared); data.shared.finder=nil end
   for id in pairs(config.workflows) do
     local old = raw.workflows[id] or {}; assert(type(old) == 'table','invalid workflow state')
     local w = {lifecycle=old.lifecycle or 'COLD',lastActive=old.lastActive or 0,pinned=old.pinned == true,windows={},spaces={}}
     assert(w.lifecycle == 'ACTIVE' or w.lifecycle == 'WARM' or w.lifecycle == 'COLD', 'invalid lifecycle')
     assert(finite(w.lastActive), 'invalid timestamp')
     for key, record in pairs(old.windows or {}) do
-      assert(type(key) == 'string' and type(record) == 'table' and type(record.adapter) == 'string' and type(record.identity) == 'string', 'invalid window record')
-      assert(record.fullscreen == nil or type(record.fullscreen) == 'boolean', 'invalid fullscreen flag')
-      if record.frame then
-        for _, axis in ipairs({'x','y','w','h'}) do assert(finite(record.frame[axis]), 'invalid frame') end
-        assert(record.frame.w > 0 and record.frame.h > 0,'invalid frame size')
+      -- Discard obsolete records before validating their old shape.
+      local finder=key=='finder' or (type(key)=='string' and key:match('^finder:')) or (type(record)=='table' and record.adapter=='finder')
+      if not finder then
+        assert(type(key) == 'string' and type(record) == 'table' and type(record.adapter) == 'string' and type(record.identity) == 'string', 'invalid window record')
+        assert(record.fullscreen == nil or type(record.fullscreen) == 'boolean', 'invalid fullscreen flag')
+        if record.frame then
+          for _, axis in ipairs({'x','y','w','h'}) do assert(finite(record.frame[axis]), 'invalid frame') end
+          assert(record.frame.w > 0 and record.frame.h > 0,'invalid frame size')
+        end
+        -- Never trust a persisted runtime window/Space ID after a Lua reload.
+        record = U.copy(record); record.windowID = nil; record.spaceIDs = nil; record.pid = nil
+        w.windows[key] = record
       end
-      -- Never trust a persisted runtime window/Space ID after a Lua reload.
-      record = U.copy(record); record.windowID = nil; record.spaceIDs = nil; record.pid = nil
-      w.windows[key] = record
     end
     if w.lifecycle == 'ACTIVE' then w.lifecycle = 'WARM' end
     if type(old.terminalProcesses)=='table' then
@@ -39,7 +31,7 @@ function M.sanitize(raw, config)
       for _,command in ipairs(old.terminalProcesses) do if type(command)=='string' then w.terminalProcesses[#w.terminalProcesses+1]=command end end
     end
     if type(old.retained)=='table' then
-      w.retained={}; for adapter,reason in pairs(old.retained) do if type(adapter)=='string' and type(reason)=='string' then w.retained[adapter]=reason end end
+      w.retained={}; for adapter,reason in pairs(old.retained) do if adapter~='finder' and type(adapter)=='string' and type(reason)=='string' then w.retained[adapter]=reason end end
     end
     if type(old.safari)=='table' and type(old.safari.tabGroup)=='string' then w.safari={tabGroup=old.safari.tabGroup,verified=false} end
     data.workflows[id] = w
