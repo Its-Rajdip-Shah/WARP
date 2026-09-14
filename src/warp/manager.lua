@@ -9,6 +9,8 @@ function M.new(config)
   for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do
     self.adapters[#self.adapters+1]=require('warp.adapters.'..name).new(config,self.store.data.shared)
   end
+  for _,a in ipairs(self.adapters) do if a.id=='vscode' then self.vscode=a elseif a.id=='safari' then self.safari=a end end
+  if self.vscode.attach then self.vscode:attach(self.store) end
   function self:discover(id)
     local out={}; local w=config.workflows[id]; if not w then return out end
     for _,a in ipairs(self.adapters) do
@@ -19,7 +21,9 @@ function M.new(config)
   end
   function self:checkpoint(id)
     id=id or self.store.data.active; if not config.workflows[id] then return false,'no active workflow' end
-    local state=self.store.data.workflows[id]; local live=self:discover(id)
+    local state=self.store.data.workflows[id]
+    if self.vscode.checkpoint then U.try('VS Code membership checkpoint',function() self.vscode:checkpoint(config.workflows[id],state) end) end
+    local live=self:discover(id)
     for _,item in ipairs(live) do
       U.try(item.adapter..' checkpoint',function()
         local key=W.key(item.adapter,item.identity)
@@ -33,6 +37,7 @@ function M.new(config)
     local state=self.store.data.workflows[id]; local workflow=config.workflows[id]
     if not state or state.lifecycle~='WARM' or state.pinned or workflow.pinned or self.switching then return false,'only unpinned WARM workflows can become COLD' end
     self:checkpoint(id)
+    state.lifecycle='COLD'; self.store:save()
     for _,a in ipairs(self.adapters) do if a.cold then U.try(a.id..' cold',function() a:cold(workflow,state) end) end end
     state.lifecycle='COLD'; self.store:save(); U.log('INFO',id..' -> COLD (unproven-safe resources retained)'); return true
   end
@@ -44,6 +49,9 @@ function M.new(config)
     if self.stopped then return false,'WARP stopped' end
     local target=config.workflows[id]; if not target then return false,'unknown workflow: '..tostring(id) end
     if not hs.accessibilityState() then U.log('ERROR','Accessibility permission required'); return false,'Accessibility permission required' end
+    if self.vscode.cancel then self.vscode:cancel('workflow changed') end
+    if self.vscode.coldStore then self.vscode.coldStore:stop() end
+    if self.safari.stop then self.safari:stop() end
     self.generation=self.generation+1
     if self.request then self.request:cancel() end
     self.switching=true; self.errors={}
@@ -53,7 +61,7 @@ function M.new(config)
       self:checkpoint(old)
       if old~=id then
         local state=self.store.data.workflows[old]; state.lifecycle='WARM'; state.lastActive=hs.timer.secondsSinceEpoch()
-        for _,item in ipairs(self:discover(old)) do if item.adapter~='safari' then U.try(item.adapter..' warm',function() W.warm(item.win) end) end end
+        for _,item in ipairs(self:discover(old)) do if item.adapter~='safari' and item.adapter~='vscode' then U.try(item.adapter..' warm',function() W.warm(item.win) end) end end
       end
     end
     -- Commit target before asynchronous restore: a new request checkpoints this partial context.
@@ -75,6 +83,7 @@ function M.new(config)
       end)
       if not ok then fail(tostring(result)) end
       self.switching=false; self.store:save()
+      if self.vscode.focus then self.vscode:focus(hs.window.focusedWindow()) end
       ctx:cancel(); self.request=nil
       U.log('INFO',id..' ACTIVE; restore finished with '..#self.errors..' issue(s)')
       if #self.errors>0 and config.settings.notifications~=false then hs.notify.new({title='WARP',informativeText=target.label..' active — '..#self.errors..' restore issue(s); see console'}):send() end
@@ -107,6 +116,7 @@ function M.new(config)
   end
   function self:start()
     W.start()
+    if self.vscode.start then self.vscode:start(function() return not self.switching and not self.stopped and self.store.data.active or nil end) end
     self.wheel=require('warp.wheel').new(config,function(id) U.try('switch request',function() self:switchTo(id) end) end); self.wheel:start()
     local nav=config.settings.navigation
     if nav then
@@ -138,6 +148,8 @@ function M.new(config)
   function self:stop()
     if self.stopped then return end
     if not self.switching and self.store.data.active then self:checkpoint() end
+    if self.safari.stop then self.safari:stop() end
+    if self.vscode.stop then self.vscode:stop() end
     self.stopped=true; self.generation=self.generation+1
     if self.request then self.request:cancel() end
     self.switching=false

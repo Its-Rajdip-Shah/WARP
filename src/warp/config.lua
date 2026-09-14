@@ -12,7 +12,7 @@ local function array(t, name)
 end
 function M.validate(input, options)
   local ok, result = pcall(function()
-    local workflows, list, selectors, roots, sessions = U.copy(input), {}, {}, {}, {}
+    local workflows, list, selectors, sessions = U.copy(input), {}, {}, {}
     local warnings={}
     assert(type(workflows) == 'table', 'workflows must return a table')
     for id, w in pairs(workflows) do
@@ -29,7 +29,10 @@ function M.validate(input, options)
       if w.primary=='finder' then w.primary='none' end
       if w.safari then
         keys(w.safari,{tabGroup=true,menuPath=true},'safari'); assert(str(w.safari.tabGroup), 'tabGroup required')
-        if w.safari.menuPath then array(w.safari.menuPath,'menuPath'); assert(#w.safari.menuPath > 0, 'empty menuPath'); for _, v in ipairs(w.safari.menuPath) do assert(str(v),'invalid menuPath') end end
+        if w.safari.menuPath~=nil then
+          warnings[#warnings+1]="workflow '"..id.."' contains deprecated Safari menuPath; native database/keyboard switching is used"
+          w.safari.menuPath=nil
+        end
       end
       if w.terminal then
         keys(w.terminal,{tmuxSession=true,root=true,tmuxPath=true},'terminal')
@@ -39,21 +42,12 @@ function M.validate(input, options)
         w.terminal.root = U.path(w.terminal.root or os.getenv('HOME'))
         if w.terminal.tmuxPath then w.terminal.tmuxPath = U.path(w.terminal.tmuxPath) end
       end
-      if w.vscode then
-        keys(w.vscode,{allowedRoots=true,openRoots=true,cliPath=true},'vscode')
-        array(w.vscode.allowedRoots,'allowedRoots'); assert(#w.vscode.allowedRoots > 0, 'allowedRoots required')
-        for i, p in ipairs(w.vscode.allowedRoots) do
-          p = U.path(p); w.vscode.allowedRoots[i] = p
-          for _, r in ipairs(roots) do assert(r.id == id or not (U.under(p,r.path) or U.under(r.path,p)), 'overlapping VS Code ownership roots') end
-          roots[#roots+1] = {id=id,path=p}
+      if w.vscode~=nil and w.vscode~=false then
+        if w.vscode~=true then
+          keys(w.vscode,{allowedRoots=true,openRoots=true,cliPath=true},'vscode')
+          if next(w.vscode) then warnings[#warnings+1]="workflow '"..id.."' contains deprecated VS Code root/CLI config; ignored, membership is learned from focus" end
         end
-        w.vscode.openRoots = w.vscode.openRoots or {}; array(w.vscode.openRoots,'openRoots')
-        for i, p in ipairs(w.vscode.openRoots) do
-          p = U.path(p); local owned = false
-          for _, root in ipairs(w.vscode.allowedRoots) do if U.under(p,root) then owned = true end end
-          assert(owned,'openRoots must be under allowedRoots'); w.vscode.openRoots[i] = p
-        end
-        if w.vscode.cliPath then w.vscode.cliPath = U.path(w.vscode.cliPath) end
+        w.vscode=true
       end
       w.apps = w.apps or {}; array(w.apps,'apps'); local seen = {}
       for _, app in ipairs(w.apps) do

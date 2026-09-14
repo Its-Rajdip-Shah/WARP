@@ -15,5 +15,15 @@ fi
 "$LUA_BIN" tests/syntax.lua
 "$LUA_BIN" tests/unit.lua
 "$LUA_BIN" tests/finder_global.lua
+"$LUA_BIN" tests/safari_debug.lua
+"$LUA_BIN" tests/safari_ax.lua
+"$LUA_BIN" tests/vscode.lua
+"$LUA_BIN" tests/cold.lua
 bash -n install.sh tests/run.sh tests/install.sh
 bash tests/install.sh
+if command -v node >/dev/null 2>&1; then
+  node --check extras/vscode-companion/extension.js
+  node tests/companion.cjs
+else
+  echo 'SKIP: companion JavaScript checks (Node unavailable)'
+fi

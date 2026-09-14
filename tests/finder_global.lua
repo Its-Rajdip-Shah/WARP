@@ -16,13 +16,13 @@ test('legacy Finder config is ignored with one warning and no primary navigation
     local c=assert(C.validate({one={label='One',key='1',finder=value}})); assert(#c.warnings==1 and c.workflows.one.finder==nil)
   end
 end)
-local raw={version=1,active='one',shared={finder={left={finderID=42}},other={keep=true}},workflows={one={lifecycle='ACTIVE',lastActive=12,pinned=true,finder={leftRoot='/old'},retained={finder='old',docker='keep'},spaces={{role='finder',id=42}},windows={['finder:left']='malformed obsolete record',strange={adapter='finder',frame={w=-1}},['vscode:project']={adapter='vscode',identity='project',windowID=8,frame={x=0,y=0,w=1,h=1}}}},two={lifecycle='WARM'}}}
+local raw={version=1,active='one',shared={finder={left={finderID=42}},other={keep=true}},workflows={one={lifecycle='ACTIVE',lastActive=12,pinned=true,finder={leftRoot='/old'},retained={finder='old',docker='keep'},spaces={{role='finder',id=42}},windows={['finder:left']='malformed obsolete record',strange={adapter='finder',frame={w=-1}},['terminal:project']={adapter='terminal',identity='project',windowID=8,frame={x=0,y=0,w=1,h=1}}}},two={lifecycle='WARM'}}}
 test('version 1 migration drops Finder data and preserves unrelated state',function()
   local d=State.sanitize(raw,config); local w=d.workflows.one
   assert(d.version==1 and d.active=='one' and w.lifecycle=='ACTIVE' and w.pinned and w.lastActive==12)
   assert(d.shared.finder==nil and d.shared.other.keep and w.finder==nil and w.retained.finder==nil and w.retained.docker=='keep')
-  assert(w.windows['finder:left']==nil and w.windows.strange==nil and w.windows['vscode:project'].identity=='project' and not w.windows['vscode:project'].windowID and #w.spaces==0)
-  assert(raw.shared.finder.left.finderID==42 and raw.workflows.one.windows['vscode:project'].windowID==8)
+  assert(w.windows['finder:left']==nil and w.windows.strange==nil and w.windows['terminal:project'].identity=='project' and not w.windows['terminal:project'].windowID and #w.spaces==0)
+  assert(raw.shared.finder.left.finderID==42 and raw.workflows.one.windows['terminal:project'].windowID==8)
 end)
 local function forbidden() error('unexpected desktop/Finder operation') end
 local timers={}
