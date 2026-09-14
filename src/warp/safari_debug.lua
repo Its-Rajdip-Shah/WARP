@@ -1,4 +1,5 @@
--- Shared native Tab Group switching core for normal restore and diagnostics.
+-- Legacy DB/keyboard experiment, invoked only by explicit debugSafariSwitch calls.
+-- Production workflow restore uses safari_ax.lua and never reads this database.
 local Request=require('warp.request')
 local M={}
 -- Hex encodes titles so tabs/newlines cannot corrupt the row protocol.

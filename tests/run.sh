@@ -16,6 +16,7 @@ fi
 "$LUA_BIN" tests/unit.lua
 "$LUA_BIN" tests/finder_global.lua
 "$LUA_BIN" tests/safari_debug.lua
+"$LUA_BIN" tests/safari_ax.lua
 "$LUA_BIN" tests/vscode.lua
 "$LUA_BIN" tests/cold.lua
 bash -n install.sh tests/run.sh tests/install.sh

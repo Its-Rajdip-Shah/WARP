@@ -1,3 +1,19 @@
+# Current Safari production path: toolbar AX picker
+
+This section supersedes all production Safari DB/shared-core descriptions in the historical revisions below. Normal workflow restore now uses `src/warp/safari_ax.lua`; `safari_debug.lua` remains only for explicit `WARP.debugSafariSwitch()` diagnostics. The debug API still reads SafariTabs.db with read-only SQLite and performs the older slow keyboard experiment. Normal switching never invokes it or requires database access. Adapter stop/replacement and WARP stop/reload cancel both paths.
+
+Production requires Safari already running. Background Safari receives `hs.application.launchOrFocus("Safari")`; already-frontmost Safari retains its 200 ms initial delay. Readiness polls fresh AX application elements every 50 ms for at most two seconds until Safari is frontmost and exposes the toolbar `AXMenuButton` by its `TabGroupPickerButton` identifier, regardless of description. Its identifier supplies the current group (empty means Local); already-target succeeds without opening the menu. AXPress plus 120 ms exposes the displayed navigation order: collect from `<N> Tabs`, normalize to Local, deduplicate in traversal order, and stop at either group-creation command. Escape closes the menu. After 80 ms, send the shortest Cmd+Shift+Down/Up sequence with 60 ms spacing, choosing NEXT on ties. Start fresh AX verification 200 ms after the last hop, polling every 50 ms for up to 750 ms. Failure reports through the existing adapter callback, allowing later adapters to continue. No sidebar, Cmd+L, database polling, or tab/group reconstruction occurs in production.
+
+Changed files: new `src/warp/safari_ax.lua` and `tests/safari_ax.lua`; Safari adapter and `src/init.lua` wiring; diagnostic module header and diagnostic tests; `tests/run.sh` and `tests/syntax.lua`; README, workflow-manager contract, and this report. Config and unrelated subsystems are unchanged.
+
+Validation: 24 core, 5 Finder, 26 legacy Safari diagnostic, 35 production Safari AX, 15 VS Code, and 12 COLD tests (117 Lua tests), plus 31 Lua syntax checks, shell/JavaScript syntax, installer preservation, and companion transport/guard tests. All pass. The companion test needed native filesystem-watcher access after its restricted run failed to respond. AX tests cover the supplied routing examples, parsing, description-independent discovery, menu boundaries/deduplication, missing UI/groups, action failure, timing, delayed verification, mismatch, focus loss, and cancellation. No live Safari GUI actions were executed by the agent.
+
+Limitations: the user has confirmed successful live Safari switching, including the readiness fix across Spaces. Safari must expose the tested toolbar/menu structure and native keyboard shortcuts. Make the intended window frontmost within Safari; first-match AX traversal does not disambiguate multiple eligible windows or identically named groups. Concurrent manual group/order changes can invalidate the route and cause verification failure. Delivered keys cannot be recalled; cancellation stops pending work and closes an open picker only while Safari remains frontmost. Database permissions apply only to the explicit legacy diagnostic.
+
+The user confirmed live acceptance and authorized merging `debug/safari-tab-groups` into GitHub main.
+
+## Historical implementation revisions
+
 # Current Safari timing: one unresolved hop at a time
 
 This targeted Safari revision supersedes the earlier three-second polling and immediate-transition descriptions below. Focus and the keyboard sequence are unchanged, as are all other subsystems.

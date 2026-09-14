@@ -31,7 +31,7 @@ At most one workflow is ACTIVE. No workflow activates automatically on a fresh i
 - macOS with a working Hammerspoon installation and Accessibility permission. This implementation was checked against the locally installed Hammerspoon APIs; no minimum macOS version or compatibility matrix has been certified.
 - Enable **Displays have separate Spaces** for the intended multi-monitor behavior. Space navigation uses Hammerspoon’s experimental Mission Control integration and can visibly animate.
 - Allow Hammerspoon/its AppleScript helper to automate Terminal when macOS prompts.
-- Safari with existing named Tab Groups; Hammerspoon needs Full Disk Access to read SafariTabs.db. Sidebar visibility is irrelevant.
+- Safari already running with existing native Tab Groups and an accessible toolbar picker. Sidebar visibility is irrelevant; normal switching does not need Safari database access.
 - Optional VS Code, Terminal + tmux, Figma, Docker Desktop, according to your workflows.
 - No Node service, Python daemon, database, Electron application, or additional resident WARP process.
 
@@ -108,15 +108,17 @@ Use `WARP.debugVSCodeOwnership()` for windows, owners, descriptors and logical C
 
 ### Safari setup
 
-Create native Tab Groups manually. Normal restore and `WARP.debugSafariSwitch()` use one shared mechanism: fixed read-only SQLite observation, Cmd+L then Cmd+Shift+Down, followed by database verification. No tabs are reconstructed, no database writes occur, and the old AX sidebar/menu restore is removed. Legacy `menuPath` is ignored with a warning.
+Create native Tab Groups manually and keep the intended Safari window frontmost within Safari. Normal restore requires Safari already running. When Safari is in the background, WARP calls `hs.application.launchOrFocus("Safari")`; when already frontmost, it retains a 200 ms initial delay. Readiness polls every 50 ms with a fresh AX application element for up to two seconds, requiring both Safari foreground and its toolbar picker by `AXMenuButton` role and `TabGroupPickerButton` identifier (even with an empty description). The identifier supplies the current group; an empty value means `Local`. An already-active target succeeds without navigation. Legacy `menuPath` remains ignored with a warning.
 
-WARP directly reproduces the existing hyper+S launcher with `hs.application.launchOrFocus("Safari")`, then confirms Safari is frontmost. It snapshots all DB rows and always performs one real keyboard hop. Exactly one changed row identifies the controlled window; subsequent hops stay bound to that row. A target already active may cycle away and back. Focus loss triggers bounded reacquisition, and Fresh DB polling waits up to six seconds per hop and requires the observed window/group ID to remain stable for 400 ms before target evaluation or another hop. Only no transition for the full timeout permits the two bounded refocus/retries; an unstable transition aborts. Multiple changed rows or a changing window set abort safely. All attempts count toward eight keyboard hops; a 90-second transaction deadline bounds exceptional retries. Normal successful hops poll for progress promptly rather than sleeping for several seconds.
+WARP presses the picker, waits 120 ms, and reads its displayed group order beginning at `<N> Tabs` (Local), deduplicating entries and stopping before group-creation commands. After Escape and 80 ms, it sends the shortest Cmd+Shift+Down/Up route with 60 ms between hops; ties go forward. Verification starts 200 ms after the last hop and polls fresh picker identifiers every 50 ms for up to 750 ms. Missing UI/groups, focus loss, secure input, or verification mismatch reports failure while later adapters continue. No sidebar, database reads, tab reconstruction, or group mutation is involved.
+
+`WARP.debugSafariSwitch()` retains the older, slower DB/keyboard experiment for explicit diagnostics only. That diagnostic needs readable `SafariTabs.db` (Full Disk Access on this Mac); it does not test the production AX route. Starting a workflow switch, stopping, or reloading cancels diagnostics.
 
 ## What each adapter does
 
 | Adapter | Implemented | Limits |
 |---|---|---|
-| Safari | Native Tab Groups, read-only DB observation, bounded keyboard switching | Full Disk Access required; actual changed DB row must be unambiguous. |
+| Safari | Toolbar AX order/current state, shortest keyboard route, bounded AX verification | Safari must be running; accessible picker and unambiguous group names required. Intended window must be frontmost within Safari. |
 | VS Code | Additive focus membership, target visibility and verified COLD close/reopen | Companion required for descriptors; unsafe windows preserved. Non-target fullscreen windows are reported rather than forcibly migrated. |
 | Terminal/tmux | Creates missing detached session, opens a dedicated viewer, reuses its title marker, records pane commands | Viewer title must remain reserved; detached/reused viewers are not reliably detectable. Sessions and processes always survive. |
 | Figma | Exclusive workflow UI, warm minimize/full-screen retention, launch and layout restore | Relies on native document restoration; unknown duplicate titles are preserved. Shared Figma UI is unmanaged. |
@@ -127,7 +129,7 @@ WARP directly reproduces the existing hyper+S launcher with `hs.application.laun
 In the Hammerspoon console:
 
 ```lua
-WARP.debugSafariSwitch("SOFT2412") -- same core used by normal switching
+WARP.debugSafariSwitch("SOFT2412") -- explicit legacy DB diagnostic; not the production AX route
 WARP.debugVSCodeOwnership()       -- runtime window IDs, titles and workflow owners
 WARP.status()                     -- copied config/state, errors, permission status
 hs.inspect(WARP.status())         -- readable diagnostic output

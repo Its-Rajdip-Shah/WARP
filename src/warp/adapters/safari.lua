@@ -1,7 +1,7 @@
 local U=require('warp.util')
 local M={}
 function M.new()
-  local self={id='safari',switcher=require('warp.safari_debug').new()}
+  local self={id='safari',switcher=require('warp.safari_ax').new()}
   function self:discover(workflow)
     if not workflow.safari then return {} end
     local app=U.app('com.apple.Safari'); local main=app and app:mainWindow()
@@ -10,7 +10,7 @@ function M.new()
   end
   function self:restore(workflow,state,ctx,done)
     if not workflow.safari then done(true); return end
-    self.switcher:stop()
+    self:stop()
     local target=workflow.safari.tabGroup
     local accepted,why=self.switcher:switch(target,function(ok,message)
       if not ctx:valid() then return end
@@ -20,7 +20,10 @@ function M.new()
     end,ctx)
     if not accepted then done(false,why) end
   end
-  function self:stop() self.switcher:stop() end
+  function self:stop()
+    self.switcher:stop()
+    if self.debugSwitcher then self.debugSwitcher:stop() end
+  end
   return self
 end
 return M

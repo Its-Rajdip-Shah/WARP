@@ -11,7 +11,9 @@ if _G.WARP and _G.WARP.stop then _G.WARP.stop() end
 -- Clear only WARP modules for direct dofile reloads; leave other Hammerspoon utilities alone.
 for name in pairs(package.loaded) do if name:match('^warp%.') then package.loaded[name]=nil end end
 local manager=require('warp.manager').new(config)
-local safariDebug=manager.safari.switcher
+-- Legacy DB diagnostics are explicit only; normal restore uses the AX picker.
+local safariDebug=require('warp.safari_debug').new()
+manager.safari.debugSwitcher=safariDebug
 local api={}
 api.switchTo=function(id) return manager:switchTo(id) end
 api.checkpoint=function(id) return manager:checkpoint(id) end
