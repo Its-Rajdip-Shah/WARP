@@ -2,7 +2,7 @@
 local U = require('warp.util')
 local M = {}
 function M.new(id, current, onError)
-  local self = {id=id,timers={},tasks={},cancelled=false}
+  local self = {id=id,timers={},tasks={},cleanups={},cancelled=false}
   function self:valid() return not self.cancelled and current() == self.id end
   function self:guard(fn)
     if not self:valid() then return end
@@ -44,8 +44,10 @@ function M.new(id, current, onError)
   function self:script(source, done)
     self:task('/usr/bin/osascript',{'-e',source},function(code,out,err) done(code == 0,out,err) end)
   end
+  function self:onCancel(fn) self.cleanups[#self.cleanups+1]=fn end
   function self:cancel()
     self.cancelled=true
+    for _,fn in ipairs(self.cleanups) do pcall(fn) end; self.cleanups={}
     for t in pairs(self.timers) do t:stop() end; self.timers={}
     for t in pairs(self.tasks) do t:setCallback(nil); if t:isRunning() then t:terminate() end end; self.tasks={}
   end

@@ -1,0 +1,12 @@
+{
+  "name": "warp-companion",
+  "displayName": "WARP Workspace Companion",
+  "description": "Reports verified local workspace descriptors to WARP; no project configuration.",
+  "publisher": "warp-local",
+  "version": "0.1.0",
+  "engines": {"vscode": "^1.85.0"},
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "extensionKind": ["ui"],
+  "capabilities": {"untrustedWorkspaces": {"supported": false}}
+}

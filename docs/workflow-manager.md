@@ -1,3 +1,20 @@
+# Current MVP switching contract
+
+This section supersedes older Safari/VS Code implementation sketches below. Any configured-root ownership, title-marker ownership, or recorded-root reopening examples in those historical sketches are obsolete.
+
+- **Finder and ChatGPT:** GLOBAL, untouched.
+- **Safari:** native persistent Tab Groups. Normal/debug calls share one core. Direct `hs.application.launchOrFocus("Safari")` reproduces the existing hyper+S hotkey; confirm foreground with 50 ms checks, one second per attempt, two attempts. Snapshot all rows with fixed `sqlite3 -readonly` SELECT, perform Cmd+L / 150 ms / Cmd+Shift+Down, then discover the single changed DB row. Bind only after that observation. Poll fresh read-only queries at 100 ms for up to six seconds per hop, confirming the same observed window/group ID for 400 ms before evaluating the target or sending another hop. Zero transition for the full timeout permits two refocus/retries; an unstable transition aborts. Bound transactions to eight keyboard hops and 90 seconds. Already-active targets may cycle away/back. Ambiguous row changes, repeated cycles and read failures abort without blocking later adapters. No sidebar, menu, URL reconstruction or DB mutation.
+- **Code membership:** real runtime window/process identity, additive sticky owners, six consecutive 10-second focus checks. Focus interruptions cancel qualification, not ownership. No permanent qualification timer. Live memberships are relearned on reload.
+- **Code visibility:** every target activation, including reselection, restores owned windows and minimizes **all** other live normal Code windows, including unowned ones. Shared target windows never take an outgoing minimize step. Non-target fullscreen windows report a limitation; no new fullscreen migration is introduced.
+- **Descriptors:** the optional local companion reads `vscode.workspace.workspaceFile` or a single local workspace folder. Fresh nonce responses plus uninterrupted native focus bind the companion session to the live window. Paths are descriptors only, never ownership authority. No configured folder lists, title matching or stale saved-window geometry matching.
+- **COLD:** persist intent first; close only verified windows with no ACTIVE/WARM co-owner, dirty document/notebook or integrated terminal. Companion rechecks the descriptor and requests a normal graceful window close. Confirm destruction before marking `warp_cold_closed`. Preserve everything uncertain.
+- **Restore:** only explicit confirmed WARP closures may reopen through the CLI. Verify the new companion session/descriptor and bind its new runtime ID back to logical owners; reuse verified existing matches. User closures are not resurrected. Pending/uncertain outcomes block duplicate retries. Saved native editor state remains VS Code's responsibility.
+- **Cleanup:** WARP stop/reload cancels owned timers, requests and watchers. Companion uses `fs.watch` and has no periodic idle loop. One-time companion installation is required for COLD descriptors; without it, Code visibility still works and COLD preserves windows.
+
+See [implementation-report.md](implementation-report.md) for descriptor investigation, installation, validation and current limitations. Remaining sections contain broader design goals, not claims of completed platform support.
+
+---
+
 <!-- Current Finder policy: GLOBAL/unmanaged. Other platform goals remain subject to the implementation report. -->
 
 # macOS Workflow Manager — Final Concrete Implementation Plan
@@ -633,19 +650,7 @@ The manager needs reliable ownership rules.
 
 ## VS Code
 
-Ownership is path-based.
-
-Example:
-
-```text
-workspace root starts with ~/Uni/SOFT2412
-→ SOFT2412
-```
-
-```text
-workspace root starts with ~/Uni/ELEC3609
-→ ELEC3609
-```
+Ownership is additive and activity-learned using runtime window identities. See the current MVP contract above. Folder/workspace paths only describe verified WARP-closed windows for restoration.
 
 ---
 
@@ -754,148 +759,27 @@ This is ideal because one app/Space serves several workflows.
 
 # 19. Safari Tab Group adapter
 
-Implementation preference order:
-
-1. use a reliable native Safari/Shortcuts action if available;
-2. otherwise Accessibility/UI automation;
-3. otherwise deterministic keyboard/menu automation.
-
-The adapter exposes:
-
-```lua
-safari.activateTabGroup("ELEC3609")
-```
-
-Verification:
-
-- after switching, query accessible UI or visible group label if possible;
-- if verification fails, report degraded restore;
-- never block the rest of the workflow switch.
-
----
+Normal restore uses the same DB/keyboard core as the debug API. Read-only SQL observes native groups; keyboard input switches them. No sidebar/menu path remains. See the current MVP contract and implementation report for bounds and multiple-window limitations.
 
 # 20. VS Code behavior
 
-VS Code may have multiple windows per workflow.
-
-Example:
-
-```text
-SOFT2412:
-- project-a
-- project-b
-```
-
-The manager must discover these dynamically.
-
-It does not assume:
-
-```text
-one workflow = one VS Code window
-```
-
----
+Multiple windows and multiple workflow owners are supported. Membership is learned after six consecutive ten-second focus checks and remains sticky while the window exists.
 
 # 21. VS Code checkpoint
 
-For each VS Code window:
-
-store:
-
-```text
-workflow root/workspace path
-full-screen true/false
-screen
-current Space ID if full-screen
-normal frame if not full-screen
-last-seen window title
-runtime window ID
-```
-
-Runtime window ID is not trusted after restart.
-
-Workspace path is the primary identity.
-
----
+Capture current geometry for live owned windows. Remove that workflow's membership only with closure evidence. Runtime IDs never survive reload as identity. Explicit WARP close records persist descriptors and logical owners separately.
 
 # 22. VS Code WARM behavior
 
-If a VS Code window is normal:
-
-```text
-minimize/hide
-```
-
-If it is native full-screen:
-
-```text
-leave full-screen Space alive
-register it as belonging to warm workflow
-do not navigate user to it
-```
-
-This preserves exact state and gives fast resume.
-
-The user does not manually encounter it because workflow-local Space navigation ignores Spaces from other workflows.
-
----
+Visibility follows the target, not merely the outgoing workflow. Restore target owners and minimize all other normal Code windows, including unowned windows. Shared target owners remain visible. Fullscreen handling is not expanded by this MVP.
 
 # 23. VS Code COLD behavior
 
-If safe:
-
-```text
-close workflow-specific VS Code windows
-```
-
-VS Code's native persistence handles editor restoration.
-
-If there is unsaved work or closing is unsafe:
-
-```text
-do NOT force close
-leave preserved
-mark:
-cold_blocked = unsaved_work
-```
-
----
+Use verified companion descriptors and a persisted close intent. Preserve ACTIVE/WARM-shared windows, dirty editors/notebooks, integrated terminals, unsupported workspaces and unverified windows. Request graceful close of the specific verified window; no process kill or forced save/discard. Confirm closure before permitting reopening.
 
 # 24. VS Code cold restore
 
-For each recorded root:
-
-```bash
-code --new-window "<root>"
-```
-
-Then:
-
-```text
-wait for matching VS Code window
-```
-
-If saved state says it should be normal:
-
-```text
-restore latest saved frame
-```
-
-If saved state says it should be full-screen:
-
-```text
-window:setFullScreen(true)
-↓
-wait for macOS to create full-screen Space
-↓
-discover new Space ID
-↓
-register it under workflow
-```
-
-Do not try to move the resulting full-screen window to an old Space ID.
-
-The old Space may no longer exist.
+Reopen only confirmed WARP COLD closures, never user closures or configured roots. Use the learned folder/saved workspace descriptor with the CLI, verify the recreated companion session against native focus, rebind logical owners and restore available geometry. Uncertain outcomes remain blocked to avoid duplicates.
 
 ---
 
@@ -1987,7 +1871,7 @@ which workflow owns this window/resource?
 Rules:
 
 ```text
-VS Code → workspace path
+VS Code → additive runtime membership (descriptor paths are not ownership)
 Terminal → tmux session
 Figma → config/document
 Docker UI → config

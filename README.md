@@ -6,7 +6,7 @@
 
 WARP is a lightweight macOS workflow manager built with Hammerspoon and Lua. A workflow describes a project’s Safari Tab Group, VS Code projects, tmux session, and supporting applications. Dynamic window layouts and Space mappings live separately from configuration.
 
-**Status: conservative v1 implementation, awaiting live macOS acceptance testing.** The promise above describes the intended experience. Safari automation is conditional, VS Code requires a title marker, and cold cleanup currently preserves resources rather than claiming it can safely close them. Read the [implementation report](docs/implementation-report.md) for exact behavior, limitations, and staged tests.
+**Status: conservative v1 implementation, awaiting live macOS acceptance testing.** The promise above describes the intended experience. Safari automation is conditional, VS Code membership is learned from sustained focus, and verified VS Code windows can gracefully close/reopen through the companion described below. Read the [implementation report](docs/implementation-report.md) for exact behavior, limitations, and staged tests.
 
 ## Use it
 
@@ -21,8 +21,8 @@ The wheel uses a translucent native Hammerspoon canvas. It supports up to ten wo
 | State | Behavior |
 |---|---|
 | ACTIVE | Owns the requested context. Individual restoration failures are reported without rejecting the workflow. |
-| WARM | Normal owned windows minimize; native full-screen windows and tmux sessions remain alive. |
-| COLD | After 30 minutes by default, safety policies run and metadata persists. This release retains all apps, containers, and terminal processes because safe destruction is not established. |
+| WARM | Normal Code windows not owned by the active target minimize, including unowned windows; shared target windows stay visible. |
+| COLD | After 30 minutes by default, safety policies run and metadata persists. Verified exclusive Code windows may close gracefully with persisted restore intent. Shared, dirty, terminal-bearing or unverified windows remain alive. Other apps/processes retain their existing safety policies. |
 
 At most one workflow is ACTIVE. No workflow activates automatically on a fresh install. Pinning prevents automatic cold transitions. COLD does **not** currently promise reduced RAM usage.
 
@@ -31,7 +31,7 @@ At most one workflow is ACTIVE. No workflow activates automatically on a fresh i
 - macOS with a working Hammerspoon installation and Accessibility permission. This implementation was checked against the locally installed Hammerspoon APIs; no minimum macOS version or compatibility matrix has been certified.
 - Enable **Displays have separate Spaces** for the intended multi-monitor behavior. Space navigation uses Hammerspoon’s experimental Mission Control integration and can visibly animate.
 - Allow Hammerspoon/its AppleScript helper to automate Terminal when macOS prompts.
-- Safari with existing named Tab Groups; its sidebar should be visible for the default Accessibility strategy.
+- Safari with existing named Tab Groups; Hammerspoon needs Full Disk Access to read SafariTabs.db. Sidebar visibility is irrelevant.
 - Optional VS Code, Terminal + tmux, Figma, Docker Desktop, according to your workflows.
 - No Node service, Python daemon, database, Electron application, or additional resident WARP process.
 
@@ -62,10 +62,7 @@ return {
   study = {
     label = 'Study', key = '1',
     safari = {tabGroup = 'Study'},
-    vscode = {
-      allowedRoots = {'~/Projects/Study'},
-      openRoots = {'~/Projects/Study/project-a'}, -- optional initial projects
-    },
+    vscode = true,
     terminal = {tmuxSession = 'study', root = '~/Projects/Study'},
     apps = {{id = 'figma', preferredFullscreen = true}},
     primary = 'figma',
@@ -74,7 +71,7 @@ return {
 }
 ```
 
-The shipped ELEC3609 and SOFT2412 entries are minimal selectors with `primary = 'none'` and no managed apps. Add the desired adapter fields and real paths when ready. Omit an adapter’s field to disable it. Supported workflow apps are `figma` and `docker`. Finder and ChatGPT are GLOBAL and entirely unmanaged.
+The current ELEC3609 and SOFT2412 entries use `primary = 'none'`, Safari Tab Groups and dynamic VS Code membership. Add the desired adapter fields and real paths when ready. Omit other adapter fields to disable them. `vscode` opts into membership learning; target visibility still minimizes every non-owned Code window. Supported workflow apps are `figma` and `docker`. Finder and ChatGPT are GLOBAL and entirely unmanaged.
 
 Legacy `finder` settings are ignored with one warning per workflow per load; `primary = 'finder'` becomes `'none'`, skipping activation focus and Space navigation. Legacy Finder Space ordering and saved state are discarded. Set `terminal.root` explicitly if it previously inherited a Finder root; its default is now your home directory.
 
@@ -88,30 +85,39 @@ return {
 }
 ```
 
-Set `navigation = false` to disable those hotkeys. Configuration is trusted local Lua data, loaded without `hs`, `os`, or `require`; do not put procedural workflow actions in it. Validation rejects unknown fields, duplicate numeric selectors, overlapping ownership roots across workflows, unsafe session names, and unsupported lifecycle policies. See the [complete schema](docs/implementation-report.md#configuration).
+Set `navigation = false` to disable those hotkeys. Configuration is trusted local Lua data, loaded without `hs`, `os`, or `require`; do not put procedural workflow actions in it. Validation rejects unknown fields, duplicate numeric selectors, unsafe session names, and unsupported lifecycle policies. See the [complete schema](docs/implementation-report.md#configuration).
 
-### VS Code setup
+### VS Code membership
 
-In **VS Code user settings**, set:
+Set `vscode = true` (or `{}`) in each participating workflow. Focus a Code window continuously for six 10-second checks while the workflow is active to add membership. No folders, title markers or CLI are required. Membership is additive: the same window can belong to several workflows. Focus loss, title/workspace changes and minimizing do not remove membership.
 
-```json
-"window.title": "[WARP:${rootPath}] ${dirty}${activeEditorShort}${separator}${appName}"
+Every activation (including reselecting the active workflow) restores target-owned live windows and minimizes all other normal Code windows, even unowned ones. A user-closed window loses membership at checkpoint and is never resurrected. Missing enumeration alone is not proof of closure. Live runtime ownership is relearned after reload; explicit WARP COLD-close records survive.
+
+For safe COLD reclamation, install the bundled companion once; it reads the actual VS Code workspace API, requiring no folder lists or title markers:
+
+```sh
+python3 extras/vscode-companion/package.py
+"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --install-extension /tmp/warp-companion-0.1.0.vsix
 ```
 
-This exposes the actual workspace/folder path. WARP recognizes only this explicit marker, then checks it against `allowedRoots`. It does not infer a project from an editor tab or a folder basename. Multiple distinct project roots are supported. Unmarked windows and multiple windows exposing the same root remain unmanaged; use distinct workspaces when necessary. Remote/untitled workspaces and paths containing `]` are unsupported.
+Reload existing Code windows after installing the companion, then reload WARP and qualify windows. The companion runs inside VS Code, uses filesystem events rather than an idle polling loop, and requires no npm service or network connection. WARP verifies its session against the focused native window using a fresh request nonce. Remote, untitled, untrusted or ambiguous workspaces remain uncloseable. Dirty editors/notebooks and any integrated terminals also prevent COLD closing. Without the companion, visibility and membership work, while COLD preserves Code windows.
 
-`openRoots` is optional: existing marked windows are discovered and saved dynamically. Reopening requires the VS Code CLI; set `vscode.cliPath` if installed in an unusual location. WARP lets VS Code handle editor tabs and internal state.
+Only confirmed WARP COLD closures can trigger CLI reopening. Folder and saved workspace descriptors are learned dynamically. Close/reopen intent is persisted before the action, and uncertain outcomes block automatic retry to avoid duplicates. A live corresponding verified window is reused. Normal geometry is restored after the recreated window is verified and rebound to its logical owners. `allowedRoots`, `openRoots` and `cliPath` are obsolete configuration and ignored with warnings.
+
+Use `WARP.debugVSCodeOwnership()` for windows, owners, descriptors and logical COLD records. Qualification has no idle polling: focus events start a temporary sequence, cancelled on focus/workflow change or stop.
 
 ### Safari setup
 
-Create your Tab Groups manually and show the sidebar. WARP looks for a unique matching accessible row outside web content, selects it, and verifies its selected state. If your Safari release exposes a useful menu, set an exact localized path, for example `menuPath = {'actual menu', 'actual submenu', 'Study'}` using names you have inspected. That is a schema illustration, not a claim those menus exist. No fictitious Safari Tab Group AppleScript API or guessed keyboard shortcut is used.
+Create native Tab Groups manually. Normal restore and `WARP.debugSafariSwitch()` use one shared mechanism: fixed read-only SQLite observation, Cmd+L then Cmd+Shift+Down, followed by database verification. No tabs are reconstructed, no database writes occur, and the old AX sidebar/menu restore is removed. Legacy `menuPath` is ignored with a warning.
+
+WARP directly reproduces the existing hyper+S launcher with `hs.application.launchOrFocus("Safari")`, then confirms Safari is frontmost. It snapshots all DB rows and always performs one real keyboard hop. Exactly one changed row identifies the controlled window; subsequent hops stay bound to that row. A target already active may cycle away and back. Focus loss triggers bounded reacquisition, and Fresh DB polling waits up to six seconds per hop and requires the observed window/group ID to remain stable for 400 ms before target evaluation or another hop. Only no transition for the full timeout permits the two bounded refocus/retries; an unstable transition aborts. Multiple changed rows or a changing window set abort safely. All attempts count toward eight keyboard hops; a 90-second transaction deadline bounds exceptional retries. Normal successful hops poll for progress promptly rather than sleeping for several seconds.
 
 ## What each adapter does
 
 | Adapter | Implemented | Limits |
 |---|---|---|
-| Safari | Shared app; exact sidebar-row selection or configured menu path, then verification | Version/UI dependent. Hidden sidebar or ambiguous rows produce a partial failure. |
-| VS Code | Full-path ownership, multiple distinct projects, warm minimize, reopen, normal/full-screen layout | Requires title marker; does not close editors automatically. |
+| Safari | Native Tab Groups, read-only DB observation, bounded keyboard switching | Full Disk Access required; actual changed DB row must be unambiguous. |
+| VS Code | Additive focus membership, target visibility and verified COLD close/reopen | Companion required for descriptors; unsafe windows preserved. Non-target fullscreen windows are reported rather than forcibly migrated. |
 | Terminal/tmux | Creates missing detached session, opens a dedicated viewer, reuses its title marker, records pane commands | Viewer title must remain reserved; detached/reused viewers are not reliably detectable. Sessions and processes always survive. |
 | Figma | Exclusive workflow UI, warm minimize/full-screen retention, launch and layout restore | Relies on native document restoration; unknown duplicate titles are preserved. Shared Figma UI is unmanaged. |
 | Docker | Exclusive Desktop UI restoration/minimize; backend preserved | No container shutdown, engine quit, or resource reclamation. Shared Desktop UI is unmanaged. |
@@ -121,6 +127,8 @@ Create your Tab Groups manually and show the sidebar. WARP looks for a unique ma
 In the Hammerspoon console:
 
 ```lua
+WARP.debugSafariSwitch("SOFT2412") -- same core used by normal switching
+WARP.debugVSCodeOwnership()       -- runtime window IDs, titles and workflow owners
 WARP.status()                     -- copied config/state, errors, permission status
 hs.inspect(WARP.status())         -- readable diagnostic output
 WARP.previewWheel(true)           -- number selection logs only; no workflow switch
