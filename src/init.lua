@@ -22,7 +22,9 @@ api.pin=function(id) return manager:pin(id,true) end
 api.unpin=function(id) return manager:pin(id,false) end
 api.nextSpace=function() return manager:navigate(1) end
 api.previousSpace=function() return manager:navigate(-1) end
-api.debugVSCodeOwnership=function() return manager.vscode:debug() end
+api.debugVSCodeResources=function() return manager.vscode:debug() end
+api.debugVSCodeSnapshots=api.debugVSCodeResources
+api.debugVSCodeOwnership=api.debugVSCodeSnapshots -- compatibility alias; returns resource maps, not owners
 api.status=function() return manager:diagnostics() end
 api.debugSafariSwitch=function(target)
   if manager.stopped or manager.switching then return false,'WARP stopped or workflow switch in progress' end

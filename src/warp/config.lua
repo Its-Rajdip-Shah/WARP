@@ -15,6 +15,7 @@ function M.validate(input, options)
     local workflows, list, selectors, sessions = U.copy(input), {}, {}, {}
     local warnings={}
     assert(type(workflows) == 'table', 'workflows must return a table')
+    workflows.general=workflows.general or {label='GENERAL',key='0'}
     for id, w in pairs(workflows) do
       assert(type(id) == 'string' and id:match('^[a-z][a-z0-9_-]*$'), 'invalid workflow ID')
       keys(w, {label=true,key=true,finder=true,safari=true,terminal=true,vscode=true,apps=true,primary=true,coldAfterMinutes=true,spaceOrder=true,pinned=true}, id)
@@ -24,13 +25,21 @@ function M.validate(input, options)
       w.id = id; w.coldAfterMinutes = w.coldAfterMinutes or 30
       assert(type(w.coldAfterMinutes) == 'number' and w.coldAfterMinutes > 0 and w.coldAfterMinutes < math.huge, 'invalid coldAfterMinutes')
       assert(w.pinned == nil or type(w.pinned) == 'boolean', 'pinned must be boolean')
-      local deprecatedFinder=w.finder~=nil or w.primary=='finder'
-      w.finder=nil -- Legacy values are ignored, including malformed old blocks.
+      local deprecatedFinder=type(w.finder)=='table' or w.primary=='finder'
+      if type(w.finder)=='table' then w.finder=nil end -- obsolete split-window configuration
       if w.primary=='finder' then w.primary='none' end
+      if id=='general' then
+        w.finder=w.finder or os.getenv('HOME')
+        w.safari={tabGroup='Local'}; w.vscode=true
+      else
+        if w.safari==nil then w.safari={tabGroup=w.label} end
+        if w.vscode==nil then w.vscode=true end
+      end
+      if w.finder~=nil then w.finder=U.path(w.finder) end
       if w.safari then
         keys(w.safari,{tabGroup=true,menuPath=true},'safari'); assert(str(w.safari.tabGroup), 'tabGroup required')
         if w.safari.menuPath~=nil then
-          warnings[#warnings+1]="workflow '"..id.."' contains deprecated Safari menuPath; native database/keyboard switching is used"
+          warnings[#warnings+1]="workflow '"..id.."' contains deprecated Safari menuPath; native AX picker switching is used"
           w.safari.menuPath=nil
         end
       end
@@ -45,7 +54,7 @@ function M.validate(input, options)
       if w.vscode~=nil and w.vscode~=false then
         if w.vscode~=true then
           keys(w.vscode,{allowedRoots=true,openRoots=true,cliPath=true},'vscode')
-          if next(w.vscode) then warnings[#warnings+1]="workflow '"..id.."' contains deprecated VS Code root/CLI config; ignored, membership is learned from focus" end
+          if next(w.vscode) then warnings[#warnings+1]="workflow '"..id.."' contains deprecated VS Code root/CLI config; ignored, runtime snapshots are used" end
         end
         w.vscode=true
       end
@@ -59,19 +68,19 @@ function M.validate(input, options)
         assert(app.warm == nil or app.warm == 'preserve', 'unsupported warm policy')
         assert(app.cold == nil or app.cold == 'preserve' or app.cold == 'resource_aware', 'unsupported cold policy')
       end
-      w.primary = w.primary or 'desktop'
+      w.primary = w.primary or 'none'
       assert(w.primary == 'none' or w.primary == 'desktop' or (w.primary == 'safari' and w.safari) or (w.primary == 'vscode' and w.vscode) or (w.primary == 'terminal' and w.terminal) or seen[w.primary], 'primary must reference a configured adapter, desktop, or none')
-      w.spaceOrder = w.spaceOrder or {'desktop','safari','figma','vscode','terminal','docker'}
+      w.spaceOrder = w.spaceOrder or {'desktop','safari','figma','vscode','terminal'}
       array(w.spaceOrder,'spaceOrder'); local order = {}
       local spaceOrder={}
       for _, role in ipairs(w.spaceOrder) do
-        if role=='finder' then deprecatedFinder=true else
+        if role=='finder' then deprecatedFinder=true elseif role~='docker' then
           assert(({desktop=true,safari=true,figma=true,vscode=true,terminal=true,docker=true})[role] and not order[role], 'invalid/duplicate spaceOrder role')
           order[role]=true; spaceOrder[#spaceOrder+1]=role
         end
       end
       w.spaceOrder=spaceOrder
-      if deprecatedFinder then warnings[#warnings+1]="workflow '"..id.."' contains deprecated finder config; Finder is global and the config is ignored (Finder primary becomes none)" end
+      if deprecatedFinder then warnings[#warnings+1]="workflow '"..id.."' contains deprecated Finder ownership/primary config; use finder = an absolute directory for location context (Finder primary becomes none)" end
       list[#list+1] = w
     end
     table.sort(list,function(a,b) return tonumber(a.key) < tonumber(b.key) end)

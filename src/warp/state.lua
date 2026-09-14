@@ -5,23 +5,8 @@ function M.sanitize(raw, config)
   assert(type(raw) == 'table' and raw.version == 1 and type(raw.workflows) == 'table', 'unsupported/corrupt state schema')
   local data = {version=1,active=nil,workflows={},shared={}}
   if type(raw.shared)=='table' then data.shared=U.copy(raw.shared); data.shared.finder=nil end
-  -- Only explicit WARP close/reopen intents survive; native runtime IDs never do.
-  local cold=data.shared.vscodeCold; data.shared.vscodeCold={}
-  if type(cold)=='table' then
-    for id,r in pairs(cold) do
-      if type(id)=='string' and type(r)=='table' and require('warp.vscode_bridge').valid(r.descriptor)
-        and ({warp_cold_closed=true,close_requested=true,close_uncertain=true,reopen_pending=true})[r.state] and type(r.owners)=='table' then
-        local owners={}; for owner,value in pairs(r.owners) do if value==true and config.workflows[owner] then owners[owner]=true end end
-        local entry={state=r.state,owners=owners,descriptor=U.copy(r.descriptor)}
-        if type(r.layout)=='table' then
-          local layout=r.layout; local frame=layout.frame; local good=type(frame)=='table'
-          if good then for _,axis in ipairs({'x','y','w','h'}) do if not finite(frame[axis]) then good=false end end end
-          if good and frame.w>0 and frame.h>0 then entry.layout={frame=U.copy(frame),screenUUID=type(layout.screenUUID)=='string' and layout.screenUUID or nil,fullscreen=layout.fullscreen==true} end
-        end
-        if next(owners) then data.shared.vscodeCold[id]=entry end
-      end
-    end
-  end
+  -- COLD preserves resources. Never revive historical close/reopen intents.
+  data.shared.vscodeCold=nil
   for id in pairs(config.workflows) do
     local old = raw.workflows[id] or {}; assert(type(old) == 'table','invalid workflow state')
     local w = {lifecycle=old.lifecycle or 'COLD',lastActive=old.lastActive or 0,pinned=old.pinned == true,windows={},spaces={}}
@@ -30,8 +15,9 @@ function M.sanitize(raw, config)
     for key, record in pairs(old.windows or {}) do
       -- Discard obsolete records before validating their old shape.
       local finder=key=='finder' or (type(key)=='string' and key:match('^finder:')) or (type(record)=='table' and record.adapter=='finder')
+      local docker=type(record)=='table' and record.adapter=='docker' or (type(key)=='string' and key:match('^docker:'))
       local vscode=key=='vscode' or (type(key)=='string' and key:match('^vscode:')) or (type(record)=='table' and record.adapter=='vscode')
-      if not finder and not vscode then
+      if not finder and not vscode and not docker then
         assert(type(key) == 'string' and type(record) == 'table' and type(record.adapter) == 'string' and type(record.identity) == 'string', 'invalid window record')
         assert(record.fullscreen == nil or type(record.fullscreen) == 'boolean', 'invalid fullscreen flag')
         if record.frame then
@@ -54,17 +40,23 @@ function M.sanitize(raw, config)
     if type(old.safari)=='table' and type(old.safari.tabGroup)=='string' then w.safari={tabGroup=old.safari.tabGroup,verified=false} end
     data.workflows[id] = w
   end
-  if type(raw.active) == 'string' and data.workflows[raw.active] then
-    data.active = raw.active; data.workflows[raw.active].lifecycle = 'ACTIVE'
+  -- Logical activation only: loading state never runs adapter restore.
+  if data.workflows.general then
+    data.active='general'; data.workflows.general.lifecycle='ACTIVE'
   end
   return data
 end
 -- Dynamic VS Code layouts/memberships are runtime-only, including Space hints.
 function M.persistable(data)
   local copy=U.copy(data)
+  copy.shared=copy.shared or {}; copy.shared.vscodeCold=nil; copy.shared.finder=nil
   for _,w in pairs(copy.workflows) do
-    for key,r in pairs(w.windows) do if r.adapter=='vscode' then w.windows[key]=nil end end
-    local spaces={}; for _,entry in ipairs(w.spaces or {}) do if entry.role~='vscode' then spaces[#spaces+1]=entry end end; w.spaces=spaces
+    w.finder=nil
+    for key,r in pairs(w.windows) do
+      if r.adapter=='vscode' or r.adapter=='finder' or r.adapter=='docker' then w.windows[key]=nil
+      else r.windowID=nil; r.pid=nil; r.spaceIDs=nil end
+    end
+    w.spaces={} -- Native Space IDs are runtime navigation hints only.
   end
   return copy
 end

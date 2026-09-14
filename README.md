@@ -1,169 +1,139 @@
+<p align="center">
+  <img src="images/logo.png" alt="WARP — Contexts at light speed" width="420">
+</p>
+
 # WARP
 
 **Your work context, one chord away.**
 
-> Switching from one project to another? WARP automatically swaps your open apps, windows, tabs, files, terminals, and Spaces to match the new task — then restores everything when you switch back.
+WARP is a lightweight macOS workflow manager built with Hammerspoon and Lua. WARP performs **workflow resource/context restoration** for a fixed set of apps: VS Code, Safari, Finder, Terminal, Figma, and Docker Desktop UI. Each adapter has its own resource identity and presentation rules; resources may be shared across workflows. Switching aims for roughly **1–5 seconds**, with **5–10 seconds** as the acceptable upper bound; live timings depend on macOS, permissions, and the configured adapters.
 
-WARP is a lightweight macOS workflow manager built with Hammerspoon and Lua. A workflow describes a project’s Safari Tab Group, VS Code projects, tmux session, and supporting applications. Dynamic window layouts and Space mappings live separately from configuration.
-
-**Status: conservative v1 implementation, awaiting live macOS acceptance testing.** The promise above describes the intended experience. Safari automation is conditional, VS Code membership is learned from sustained focus, and verified VS Code windows can gracefully close/reopen through the companion described below. Read the [implementation report](docs/implementation-report.md) for exact behavior, limitations, and staged tests.
+Safari's AX switching has passed the user's live testing. The new GENERAL, Finder, and resource-preserving lifecycle integration still needs live acceptance. See the [implementation report](docs/implementation-report.md).
 
 ## Use it
 
-Hold **Control + Option + Command** to reveal the radial wheel. Press a configured **number** while holding the chord to switch. Release a modifier or press Escape to cancel. Existing letter shortcuts pass through unchanged and dismiss the overlay.
+Hold **Control + Option + Command** to reveal the radial wheel, then press a configured number. Release a modifier or press Escape to cancel. Existing letter shortcuts pass through and dismiss the overlay. **Control + Option + Right/Left** navigates the active workflow's registered Spaces.
 
-The wheel uses a translucent native Hammerspoon canvas. It supports up to ten workflows, one for each numeric key. It does not activate a web view or replace your existing Hammerspoon configuration.
+On load/reload, runtime Code resource state resets and **GENERAL becomes ACTIVE in curation mode**. Existing normal Code windows are exposed; fullscreen windows remain fullscreen. Safari selects Local through the existing AX adapter, and Finder refreshes its home/configured directory. Reload now deliberately performs these actions; the earlier desktop-neutral rule is obsolete. Other adapters follow their explicit configuration.
 
-**Control + Option + Right/Left** navigates only the active workflow’s registered Spaces. Shortcuts are configurable.
-
-## Workflow lifecycle
-
-| State | Behavior |
-|---|---|
-| ACTIVE | Owns the requested context. Individual restoration failures are reported without rejecting the workflow. |
-| WARM | Normal Code windows not owned by the active target minimize, including unowned windows; shared target windows stay visible. |
-| COLD | After 30 minutes by default, safety policies run and metadata persists. Verified exclusive Code windows may close gracefully with persisted restore intent. Shared, dirty, terminal-bearing or unverified windows remain alive. Other apps/processes retain their existing safety policies. |
-
-At most one workflow is ACTIVE. No workflow activates automatically on a fresh install. Pinning prevents automatic cold transitions. COLD does **not** currently promise reduced RAM usage.
-
-## Requirements
-
-- macOS with a working Hammerspoon installation and Accessibility permission. This implementation was checked against the locally installed Hammerspoon APIs; no minimum macOS version or compatibility matrix has been certified.
-- Enable **Displays have separate Spaces** for the intended multi-monitor behavior. Space navigation uses Hammerspoon’s experimental Mission Control integration and can visibly animate.
-- Allow Hammerspoon/its AppleScript helper to automate Terminal when macOS prompts.
-- Safari already running with existing native Tab Groups and an accessible toolbar picker. Sidebar visibility is irrelevant; normal switching does not need Safari database access.
-- Optional VS Code, Terminal + tmux, Figma, Docker Desktop, according to your workflows.
-- No Node service, Python daemon, database, Electron application, or additional resident WARP process.
+On first use, Code curation exposes candidates without marking the workflow configured. Arrange, minimize, close, or open resources yourself; departure captures the resulting resource set and presentation. An explicit configured flag distinguishes never-curated from captured-with-zero-resources. GENERAL follows the same resource rules as named workflows.
 
 ## Installation
 
-Clone or place the repository wherever you want. From its root:
+Requires macOS, Hammerspoon, Accessibility permission, and Apple command-line tools for the fallback test runner. Enable **Displays have separate Spaces** for multi-monitor navigation. Allow Finder Automation when macOS prompts (and Terminal if explicitly configured).
 
 ```sh
-bash install.sh
+bash install.sh                   # show the loader; change nothing
+bash install.sh --install-loader  # back up init.lua and append the loader
 ```
 
-This displays your repository-specific loader and changes nothing. Future installations can append it safely:
+If you already have a working WARP `dofile(...)` loader, keep it. The installer preserves existing configuration and refuses to modify a symlinked init file. Edit `config/workflows.lua`, then run `WARP.reload()` in the Hammerspoon console.
 
-```sh
-bash install.sh --install-loader
-```
-
-The installer backs up an existing `init.lua`, appends a small loader, and avoids duplicate entries. It refuses to modify a symlinked init. It never replaces existing configuration. If you already have a working WARP `dofile(...)` loader, **keep it and skip installation**.
-
-Edit `config/workflows.lua`, then reload Hammerspoon using its menu. Loading WARP itself does not launch apps or switch your desktop. The message **“WARP loaded”** confirms startup.
-
-## Declarative configuration
-
-`config/workflows.lua` returns a table keyed by stable, lowercase workflow IDs:
+## Convention-first workflows
 
 ```lua
 return {
-  study = {
-    label = 'Study', key = '1',
-    safari = {tabGroup = 'Study'},
-    vscode = true,
-    terminal = {tmuxSession = 'study', root = '~/Projects/Study'},
-    apps = {{id = 'figma', preferredFullscreen = true}},
-    primary = 'figma',
-    coldAfterMinutes = 30,
+  general = {label = 'GENERAL', key = '0'}, -- Finder defaults to your home directory
+  soft2412 = {
+    label = 'SOFT2412', key = '2',
+    finder = '/Users/rajdipshah/UNI/Y3S1 - 2026 sem 2/SOFT2412',
+  },
+  warp = {
+    label = 'WARP', key = '3',
+    finder = '/absolute/path/to/WARP',
   },
 }
 ```
 
-The current ELEC3609 and SOFT2412 entries use `primary = 'none'`, Safari Tab Groups and dynamic VS Code membership. Add the desired adapter fields and real paths when ready. Omit other adapter fields to disable them. `vscode` opts into membership learning; target visibility still minimizes every non-owned Code window. Supported workflow apps are `figma` and `docker`. Finder and ChatGPT are GLOBAL and entirely unmanaged.
+For named workflows, Safari defaults to `label`, Code resource handling defaults enabled, and `primary` defaults to `'none'`. Create the corresponding native Safari Tab Group yourself. Explicit `safari = {tabGroup = 'Another group'}`, `vscode = true`, and configured primary overrides remain supported. Use `safari = false` or `vscode = false` to opt out of that named workflow's adapter policy.
 
-Legacy `finder` settings are ignored with one warning per workflow per load; `primary = 'finder'` becomes `'none'`, skipping activation focus and Space navigation. Legacy Finder Space ordering and saved state are discarded. Set `terminal.root` explicitly if it previously inherited a Finder root; its default is now your home directory.
+The reserved workflow ID `general` is added with key `0` if omitted; its key can be changed explicitly if needed. It always uses Safari Local and participates in Code curation/resource restoration. Its Finder default is the user's home directory. The repository includes GENERAL, ELEC3609, and SOFT2412. **ELEC3609 has a Finder-path TODO** because no actual path was supplied; Finder is skipped for that workflow until configured. Historical example paths are not assumed to be real project locations.
 
-`config/settings.lua` controls persistence, notifications, and navigation:
+Optional existing Terminal/tmux and Figma settings remain supported; no new tmux switching is implemented. Use `apps = {{id = 'docker'}, {id = 'figma'}}` to declare those UI contexts relevant; omission leaves them irrelevant. Docker's backend is not managed. Old Finder ownership tables, Finder primary/Space ordering, and obsolete Code root/CLI settings are ignored with warnings. Finder is configured with a single absolute (or `~/`) directory string.
 
-```lua
-return {
-  stateDirectory = '~/.workflow-manager',
-  navigation = {mods = {'ctrl', 'alt'}, next = 'right', previous = 'left'},
-  notifications = true,
-}
-```
+`config/settings.lua` controls the state directory, navigation shortcuts, and notifications. Configuration is data-only Lua. Duplicate numeric selectors and unknown fields are rejected.
 
-Set `navigation = false` to disable those hotkeys. Configuration is trusted local Lua data, loaded without `hs`, `os`, or `require`; do not put procedural workflow actions in it. Validation rejects unknown fields, duplicate numeric selectors, unsafe session names, and unsupported lifecycle policies. See the [complete schema](docs/implementation-report.md#configuration).
+## Finder location context
 
-### VS Code membership
+On every explicit switch, including reselection, Finder validates the configured directory, calls `hs.osascript.applescript` to `close every Finder window`, waits **300 ms**, then invokes `/usr/bin/open` with the directory as an argument-array entry through `hs.task`. Finder is not quit, snapshotted, or treated as an owned window. Browsing windows/tabs are discarded as requested.
 
-Set `vscode = true` (or `{}`) in each participating workflow. Focus a Code window continuously for six 10-second checks while the workflow is active to add membership. No folders, title markers or CLI are required. Membership is additive: the same window can belong to several workflows. Focus loss, title/workspace changes and minimizing do not remove membership.
+Missing paths, close failures, and nonzero open exits are isolated from Code and Safari. The close script has a three-second AppleScript timeout; the open helper has a three-second process timeout. A zero open exit confirms the command completed, not a separate AX verification of Finder's displayed directory. Cancellation prevents a pending open, but cannot recall an already-delivered native action.
 
-Every activation (including reselecting the active workflow) restores target-owned live windows and minimizes all other normal Code windows, even unowned ones. A user-closed window loses membership at checkpoint and is never resurrected. Missing enumeration alone is not proof of closure. Live runtime ownership is relearned after reload; explicit WARP COLD-close records survive.
+## App-specific resource identity
 
-For safe COLD reclamation, install the bundled companion once; it reads the actual VS Code workspace API, requiring no folder lists or title markers:
+| Adapter | Identity and behavior |
+|---|---|
+| Safari | Existing native Tab Group; working AX route is unchanged. GENERAL selects Local. |
+| Finder | Configured directory; close browsing windows, wait 300 ms, argument-array `open`. |
+| Terminal | Existing tmux/session configuration; no new window snapshot model or session commands. |
+| VS Code | Verified local folder or `.code-workspace` descriptor, plus independent presentation per workflow. |
+| Figma | Unambiguous live window titles under declared Figma contexts. Exact missing-document reopening is unsupported. |
+| Docker | Declared Desktop UI context; restore/minimize windows or launch the UI when required. Backend/containers stay untouched. |
+
+## VS Code resources
+
+Each workflow retains a resource map with independent `visibility` (visible/minimized) and `restorePresentation` (normal/fullscreen), a normal pixel frame, and screen UUID. Minimizing a fullscreen resource retains fullscreen restore intent even though macOS must first exit fullscreen. A visible normal window captured on departure records normal intent. In-progress or cancelled WARP restores retain their target metadata during capture, including same-workflow reselection. Previously unobserved minimized windows default to normal; WARP cannot infer fullscreen history from a minimized native window alone. Stable keys are `folder:<path>` or `workspace:<path>` obtained from the existing companion. The same resource can have different state in several workflows. Closing it while curating B does not erase A's saved resource. Configured captures merge live updates into the outgoing workflow's map, retaining closed resources and their last presentation. First-time curation includes only resources live at its first capture.
+
+- Relevant live normal resources restore their saved frames and visibility. Minimized entries use **unminimize → setFrame → minimize**.
+- Relevant missing resources reopen through Code's argument-array CLI **only when saved visible/fullscreen**. A new native window must be verified against the exact descriptor before its state is applied. Post-launch inventory checks retry at most three times for companion startup; unresolved identity never triggers a second speculative launch. Known live bindings exclude stale closed companion sessions from duplicate checks; unmapped live windows still require complete inventory.
+- Missing minimized resources remain remembered but do not reopen.
+- Irrelevant live normal resources minimize, never close. For relevant live resources, target presentation wins: exit fullscreen before restoring a normal/minimized frame, or unminimize and enter fullscreen when saved fullscreen. Unminimization is verified before fullscreen entry. Code resources restore serially: one resource completes verification before the next starts, and cancellation drops the remaining queue. Each native transition phase is polled every 50 ms for up to two seconds; frame/minimized state is then verified for up to 750 ms. Already-fullscreen targets and irrelevant fullscreen windows are preserved. No Mission Control ordering is restored.
+- Normal changes are verified every 50 ms for up to 750 ms with two-pixel frame tolerance. No `moveWindowToSpace` or app-wide hide/show is used.
+
+There are no owner sets, adoption counters, or ten-second qualification loops. A small focus watcher obtains descriptors through fresh companion probes; it does not assign workflow membership. Each switch refreshes the companion inventory before outgoing capture. Runtime maps, bindings, and configured flags reset on reload.
+
+### Companion and safe fallback
+
+For reliable folder/workspace reopening, install the bundled companion once:
 
 ```sh
 python3 extras/vscode-companion/package.py
 "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --install-extension /tmp/warp-companion-0.1.0.vsix
 ```
 
-Reload existing Code windows after installing the companion, then reload WARP and qualify windows. The companion runs inside VS Code, uses filesystem events rather than an idle polling loop, and requires no npm service or network connection. WARP verifies its session against the focused native window using a fresh request nonce. Remote, untitled, untrusted or ambiguous workspaces remain uncloseable. Dirty editors/notebooks and any integrated terminals also prevent COLD closing. Without the companion, visibility and membership work, while COLD preserves Code windows.
+Reload Code windows after installation. Focus windows during curation so their native runtime handles can be paired with fresh companion responses. Untrusted/remote/untitled workspaces and windows without a verified descriptor retain only runtime presentation; WARP cannot safely reopen them. It never guesses identity from Code titles.
 
-Only confirmed WARP COLD closures can trigger CLI reopening. Folder and saved workspace descriptors are learned dynamically. Close/reopen intent is persisted before the action, and uncertain outcomes block automatic retry to avoid duplicates. A live corresponding verified window is reused. Normal geometry is restored after the recreated window is verified and rebound to its logical owners. `allowedRoots`, `openRoots` and `cliPath` are obsolete configuration and ignored with warnings.
+A missing/incomplete inventory or an unmapped matching live resource defers reopening to avoid duplicates. Failed or cancelled launches remain marked uncertain for the runtime session; WARP does not repeatedly launch them. Descriptor inventory/probes are bounded, request-driven operations, not an idle polling service. Many missing resources can take longer than the usual 1–5 second switch target.
 
-Use `WARP.debugVSCodeOwnership()` for windows, owners, descriptors and logical COLD records. Qualification has no idle polling: focus events start a temporary sequence, cancelled on focus/workflow change or stop.
+Figma supports declared, potentially shared UI contexts, preserves ambiguous windows, and reports missing documents rather than guessing a URL or applying a missing document's layout to a different title. It may launch Figma and rely on native app restoration; it cannot guarantee a particular document reopened. Docker launches only Desktop UI when declared relevant and missing. Neither adapter closes irrelevant windows. Code curation is dynamic; Figma/Docker relevance currently comes from explicit `apps` configuration.
 
-### Safari setup
+## WARM and COLD preserve resources
 
-Create native Tab Groups manually and keep the intended Safari window frontmost within Safari. Normal restore requires Safari already running. When Safari is in the background, WARP calls `hs.application.launchOrFocus("Safari")`; when already frontmost, it retains a 200 ms initial delay. Readiness polls every 50 ms with a fresh AX application element for up to two seconds, requiring both Safari foreground and its toolbar picker by `AXMenuButton` role and `TabGroupPickerButton` identifier (even with an empty description). The identifier supplies the current group; an empty value means `Local`. An already-active target succeeds without navigation. Legacy `menuPath` remains ignored with a warning.
+Switching away marks the outgoing workflow WARM. After 30 minutes by default, the existing lifecycle timer can mark an unpinned WARM workflow COLD. **COLD closes nothing.** It is a metadata transition: no Code window closes/reopens, no app quits, no tmux session dies, and no Docker service stops. Normal windows keep their current minimized state; native fullscreen windows stay fullscreen. Entering GENERAL restores its resources after it has been curated.
 
-WARP presses the picker, waits 120 ms, and reads its displayed group order beginning at `<N> Tabs` (Local), deduplicating entries and stopping before group-creation commands. After Escape and 80 ms, it sends the shortest Cmd+Shift+Down/Up route with 60 ms between hops; ties go forward. Verification starts 200 ms after the last hop and polls fresh picker identifiers every 50 ms for up to 750 ms. Missing UI/groups, focus loss, secure input, or verification mismatch reports failure while later adapters continue. No sidebar, database reads, tab reconstruction, or group mutation is involved.
+`vscode_cold.lua` remains a historical experiment, not a production instance. Old `vscodeCold` intents are discarded. The bridge/companion are reused only for descriptor inventory and probes; production never sends their experimental close command. COLD makes no RAM-reclamation promise.
 
-`WARP.debugSafariSwitch()` retains the older, slower DB/keyboard experiment for explicit diagnostics only. That diagnostic needs readable `SafariTabs.db` (Full Disk Access on this Mac); it does not test the production AX route. Starting a workflow switch, stopping, or reloading cancels diagnostics.
+Docker's engine, containers, images, volumes, and Compose workloads are not controlled. ChatGPT, Spotify, and other apps outside the fixed managed set remain global and untouched.
 
-## What each adapter does
+## Safari
 
-| Adapter | Implemented | Limits |
-|---|---|---|
-| Safari | Toolbar AX order/current state, shortest keyboard route, bounded AX verification | Safari must be running; accessible picker and unambiguous group names required. Intended window must be frontmost within Safari. |
-| VS Code | Additive focus membership, target visibility and verified COLD close/reopen | Companion required for descriptors; unsafe windows preserved. Non-target fullscreen windows are reported rather than forcibly migrated. |
-| Terminal/tmux | Creates missing detached session, opens a dedicated viewer, reuses its title marker, records pane commands | Viewer title must remain reserved; detached/reused viewers are not reliably detectable. Sessions and processes always survive. |
-| Figma | Exclusive workflow UI, warm minimize/full-screen retention, launch and layout restore | Relies on native document restoration; unknown duplicate titles are preserved. Shared Figma UI is unmanaged. |
-| Docker | Exclusive Desktop UI restoration/minimize; backend preserved | No container shutdown, engine quit, or resource reclamation. Shared Desktop UI is unmanaged. |
+Safari must already be running with the native groups configured. Its working AX implementation is preserved: background Safari receives `hs.application.launchOrFocus("Safari")`; already-frontmost Safari retains a 200 ms initial delay. Fresh AX roots are polled every 50 ms for at most two seconds until Safari is frontmost and the toolbar picker exists. No explicit Space switching is added.
 
-## Diagnostics and safe testing
+The picker identifier supplies current state (empty means Local). If already at the target, no navigation is sent. WARP presses the picker, reads the displayed order after 120 ms, deduplicates from `<N> Tabs` to the creation commands, and closes with Escape. After 80 ms it sends the shortest Cmd+Shift+Down/Up route, 60 ms apart; ties go forward. Final AX verification starts 200 ms after the last hop, polling every 50 ms for up to 750 ms. A missing target fails Safari only; no tabs or groups are recreated.
 
-In the Hammerspoon console:
+Normal switching needs no Safari database access or visible sidebar. `WARP.debugSafariSwitch()` is a separate legacy DB/keyboard diagnostic and requires readable SafariTabs.db; it is not the production route. Make the intended Safari window frontmost within Safari when multiple windows expose eligible pickers.
+
+## Diagnostics and tests
 
 ```lua
-WARP.debugSafariSwitch("SOFT2412") -- explicit legacy DB diagnostic; not the production AX route
-WARP.debugVSCodeOwnership()       -- runtime window IDs, titles and workflow owners
-WARP.status()                     -- copied config/state, errors, permission status
-hs.inspect(WARP.status())         -- readable diagnostic output
-WARP.previewWheel(true)           -- number selection logs only; no workflow switch
-WARP.previewWheel(false)          -- enable real selection after wheel tests
+WARP.status()
+WARP.debugVSCodeResources() -- workflow resource maps and configured flags
 WARP.switchTo('soft2412')
+WARP.switchTo('general')
 WARP.checkpoint()
+WARP.makeCold('soft2412')   -- only unpinned WARM; metadata only
 WARP.pin('soft2412')
 WARP.unpin('soft2412')
-WARP.makeCold('soft2412')          -- only an inactive, unpinned WARM workflow
-WARP.nextSpace()
-WARP.previousSpace()
-WARP.reload()                     -- validate config, stop owned resources, reload
-WARP.stop()                       -- stop WARP; does not close your applications
+WARP.previewWheel(true)    -- selection logs only
+WARP.previewWheel(false)
+WARP.reload()
+WARP.stop()
 ```
-
-Run local tests without touching the live desktop:
 
 ```sh
 bash tests/run.sh
 ```
 
-Tests use Lua if available, otherwise a temporary C host linked to Hammerspoon’s bundled Lua (requires Apple command-line developer tools). They check syntax, pure logic, mocked asynchronous GUI behavior, persistence, and installer preservation. They do not establish live GUI compatibility. Follow the [manual acceptance plan](docs/implementation-report.md#manual-acceptance) starting with the wheel alone.
+Tests cover configuration, lifecycle, snapshots, persistence, mocked GUI orchestration, shell/JavaScript syntax, and installer preservation. The retained companion experiment has a mocked VS Code test requiring a native temporary filesystem watcher. Passing tests do not establish live GUI compatibility.
 
-Finder is untouched throughout activation, checkpoint, WARM, COLD and reload. WARP has no Finder discovery, AppleScript, role assignment, window mutation, saved layout, primary focus, or Space registration. `WARP.debugFinder()` has been removed.
-
-Logs use `[WARP][INFO|WARN|ERROR]` in the Hammerspoon console. State is a versioned JSON file at `~/.workflow-manager/state.json`, written using a same-directory temporary file and rename. Runtime IDs are discarded on reload; invalid state is preserved and disables further persistence until repaired. State is not encrypted. Back it up if project metadata matters.
-
-## Architecture and safety
-
-`src/init.lua` derives the repository location from itself. The manager coordinates independent adapters through a request context that owns timers and helper tasks. Screens, windows, ownership, Spaces, state, and lifecycle logic each have their own module.
-
-A newer request cancels older WARP timers/helpers and invalidates callbacks. Already-delivered macOS launch or Accessibility commands cannot be recalled; a late OS activation remains a documented race. WARP does not force-quit, click Discard, close unsaved documents, kill shells, or stop containers. Normal window layouts are learned at checkpoints instead of continually enforced.
-
-Native full-screen windows are tracked by their current Space, not moved into an old saved Space. Display migration exits full-screen only when an available saved display differs, moves the normal window, re-enters full-screen, and discovers the new Space. Missing displays fall back to an available display. Some windows may remain undiscoverable until their Space has been visited after a reload.
-
-The [architecture document](docs/workflow-manager.md) defines Finder as GLOBAL. The [implementation report](docs/implementation-report.md) documents actual behavior and deviations; design goals are not claims of completed platform support.
+State at `~/.workflow-manager/state.json` is written atomically. Corrupt state is preserved with persistence disabled. Code resource maps/bindings, Code/Finder runtime identities and layouts, old COLD intents, and runtime Space IDs are not persisted. A newer request cancels stale timers/helpers; already-delivered OS commands cannot be recalled. See the [current contract and historical design notes](docs/workflow-manager.md) for scope and limitations.

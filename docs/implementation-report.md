@@ -1,3 +1,113 @@
+## Closed Code resource lifecycle
+
+Configured capture now merges observed live states while retaining closed descriptor entries; first capture still includes only current candidates. Existing fullscreen-intent and serialized transition behavior is unchanged. Descriptor bindings survive unavailable inventory, while destruction removes only the native binding. Verified live bindings rule out duplicates without stale closed-session inventory; unmapped live windows still require complete safe inventory. Reopened windows bind to the original descriptor only after exact companion/native focus verification.
+
+The previous reopening path issued one focused `probe` after detecting a new native window. That request can expire while its extension starts (the companion handles file events, so a request predating activation can be missed). The supplied log does not conclusively establish which native event caused that timeout. Reopening now issues up to three fresh post-launch inventory requests, retaining the existing two-second transport bound. These requests verify the new window, not the dead original window or stored path. Failed verification keeps an uncertain-launch guard and preserves workflow entries. Logs identify descriptor, eligibility, launch, inventory attempts, verification result, and new window ID. Nil window filter/focus/destruction and missing-application paths are guarded.
+
+Validation: focused Code 45/45; resources 15/15; full Lua 177/177; syntax 36/36 files. Installer, shell syntax, JavaScript syntax, and mocked companion checks pass. Live macOS reopening/extension startup remains unverified. No Safari/Finder/Terminal/Figma/Docker implementation changes, commit, or push.
+
+## Serialized Code restore and nil window events
+
+Code now queues live/reopened resources and completes presentation verification before starting the next. Queued target metadata is registered before execution so interrupted capture retains intended visibility/presentation for unstarted resources. Cancellation stops queue advancement and polling. Failed resources report errors and permit subsequent resources to restore. The existing visibility/restorePresentation model and descriptor reopening rules remain intact. A narrow nil guard in the shared window-filter predicate ignores transient nil callback windows.
+
+Validation: 42/42 focused Code tests; 3/3 windows helper tests; 169/169 full Lua tests; syntax 36/36 Lua files. Shell syntax, installer checks, JavaScript syntax, and mocked companion tests pass. Queue regressions cover repeated three-window mixed entry/exit cycles, cancellation, queued capture, and isolated failure. Native fullscreen animation timing and total live switch latency still require live verification. No protected adapter implementation changes, commit, or push.
+
+## Independent Code visibility and restore intent
+
+Code snapshots now distinguish `visibility` from `restorePresentation`. Minimized capture retains the workflow's remembered intent (or known runtime intent); visible normal curation replaces it. Fullscreen-intent minimized targets exit fullscreen and minimize without changing intent. Visible fullscreen targets wait for unminimization before entering fullscreen, with bounded 50 ms polling. Pending/cancelled restore target metadata protects captures from internal intermediate states. Existing manager departure/reselection behavior remains unchanged; finish/manual checkpoints already exclude Code. Resource/action/result logs expose both target fields and live flags.
+
+Focused Code tests: 39/39. Full Lua suite: 163/163. Lua syntax: 35/35 files. Installer, shell syntax, JavaScript syntax, and mocked companion tests pass. Native GUI behavior remains to be verified live. Fullscreen intent cannot be reconstructed for a previously unobserved minimized window; first capture defaults that unknown case to normal. All metadata is runtime-only. Protected adapters were not edited. No commit or push.
+
+## VS Code target presentation correction
+
+Target workflow presentation now wins over a relevant live window's fullscreen state. Fullscreen exit is verified before frame restoration/minimization; entry is requested after unminimization and verified. Native transitions poll at 50 ms with a two-second bound; post-exit geometry/minimization has a 750 ms verification bound. Request cancellation prevents later restore actions, and per-window failures are logged and isolated. Descriptor identity, reopening rules, first-use curation, and unrelated fullscreen handling are unchanged. Safari, Finder, and Terminal implementations were not modified.
+
+Validation: focused Code suite **33/33**; full Lua suite **157/157** (28 core, 7 Finder, 26 Safari focus/discovery, 35 Safari AX, 33 Code, 10 resources, 6 app safety, 12 historical cold/descriptor); syntax **35/35 Lua files**. Shell syntax, installer tests, JavaScript syntax, and mocked companion tests passed. The companion filesystem watcher required execution outside the sandbox after its sandboxed run timed out. Added six presentation transition cases, repeated GENERAL/SOFT identity coverage, entry/exit timeouts, and cancellation during exit. No live GUI transitions were performed; native animation behavior still needs the user rerun. No commit or push.
+
+# Current milestone: workflow resource/context restoration
+
+Production instantiates the Code, Finder, Safari, Terminal, Figma, and Docker UI adapters. Code constructs the new `vscode_resources.lua` helper, which reuses `vscode_bridge.lua` for inventory/probe only. It never constructs `vscode_cold.lua` or sends a companion close request. Figma delegates safe presentation to the existing `owned.lua` helper (the historical name no longer means exclusive workflow ownership). Existing manager/window/Space/lifecycle/request modules remain in use.
+
+Code uses explicit per-workflow configured flags and resource maps. Stable keys are kind + verified local folder/workspace path; minimized/fullscreen/frame/screen state belongs independently to each workflow. Fresh focused companion evidence binds native handles; inventory refresh updates known descriptors before capture. Unverified windows remain runtime-only and cannot reopen. Departure updates only the current workflow; closing in B cannot erase A's stable record. First-use exposes normal Code candidates, and a captured empty map minimizes subsequent normal candidates. Existing fullscreen windows are preserved; relevant reopened/normal windows may enter requested fullscreen. Missing minimized-only descriptors are not reopened. Duplicate/incomplete inventories and uncertain launches defer reopening safely.
+
+Reload now starts GENERAL curation and invokes the protected Safari Local and Finder home-context paths. Safari implementation is unchanged. Finder still uses its proven AppleScript close, 300 ms wait, and argument-array open; ELEC3609 stays TODO. Terminal implementation is unchanged. WARM/COLD never closes Code or quits apps. Docker manages only declared UI relevance and never sends backend/container commands. Figma permits shared declared contexts and unique live titles, but has no verified stable document URL; missing documents are reported and do not donate their layout to an unfamiliar title. Inspection found no installed Figma scripting definition exposing document identity. Figma/Docker relevance is currently declared through `apps`; dynamic first-use resource learning is implemented for Code.
+
+Files touched by this resource milestone: `src/warp/vscode_resources.lua` (new); `src/warp/adapters/vscode.lua`, `docker.lua`, `figma.lua`, `owned.lua`; `src/warp/manager.lua`, `config.lua`, `ownership.lua`; `src/init.lua`; `config/workflows.lua`; `tests/vscode.lua`, `unit.lua`, `run.sh`, `syntax.lua`; new `tests/resources.lua` and `tests/app_safety.lua`; `README.md` and both documentation files. Earlier local state/Finder/test edits, `cat.txt`, and the supplied logo are preserved. No Git commit or push.
+
+Live validation needed: install/reload the companion if absent, focus Code windows during curation, then verify exact descriptor reopening, fullscreen completion, shared-resource presentation, and fresh GENERAL reload. Untitled/remote/untrusted workspaces, never-verified native mappings, ambiguous inventories, missed cross-Space enumeration, and runtime ID reuse constrain safe reopening. Screen UUID is diagnostic; no speculative monitor/normal-Space reconstruction is performed. Finder exit status does not independently verify the eventual displayed folder. OS permission prompts and multiple sequential resource launches can exceed the 1–5 second typical target. Delivered native commands cannot be recalled. Figma exact missing-document reopen remains unsupported.
+
+## Final verification for the resource contract
+
+The final full `bash tests/run.sh` run completed with **147 passed Lua tests, 0 failed**: 28 core/manager, 7 Finder, 26 legacy Safari diagnostics, 35 production Safari AX, 23 Code resource/presentation, 10 descriptor transport/reopen, 6 Figma/Docker/Terminal safety, and 12 isolated historical COLD tests. All **35 Lua syntax checks**, shell/JavaScript syntax checks, installer preservation checks, and companion transport/command-guard checks passed. The companion test used native temporary filesystem-watcher access; all app/GUI/launch calls were mocked. No live workflow was activated and no companion was installed by the agent.
+
+`git diff --check` passes. The Safari adapter, Safari AX core, Safari diagnostic core, and Terminal adapter remain unchanged from HEAD. Finder's existing close → 300 ms → open implementation is unchanged by this milestone and its seven regressions pass. No production Code/Docker/manager path sends close/COLD/container commands or moves normal windows between Spaces.
+
+Before live acceptance, use the README's companion instructions if it is not already installed. Focus candidate Code windows to obtain verified descriptors; inspect `WARP.debugVSCodeResources()`, which returns copied resource maps and explicit configured flags. Exercise a resource shared between A/B, close it in B, and return to A with visible/fullscreen state; verify minimized-only missing resources do not launch. Confirm fresh GENERAL curation on reload, protected Finder/Safari behavior, Docker UI-only changes, and conservative Figma missing-document reporting. Timing, UI/Space transitions, and mapping completeness still require this live acceptance.
+
+# Historical milestone reports — superseded
+
+All following snapshot-only, ownership, and reload-neutral descriptions are historical.
+
+# Current milestone: snapshot-based Code workflow state
+
+The replacement snapshot contract supersedes the ownership/adoption milestone below. Production Code has no focus watcher, qualification timer, owner sets, app-wide unhide, companion close/reopen, or ownership-based restore decisions. `snapshots[workflowId][windowId]` in the Code adapter is the sole runtime state, storing minimized/fullscreen flags, exact pixel frame, title, and screen UUID.
+
+The manager captures Code only on outgoing workflow departure, including GENERAL. Initial visits do nothing to Code; finish/manual/inactive COLD checkpoints do not create or overwrite snapshots. Existing target snapshots restore all current normal windows using unminimize/setFrame and, for minimized entries, minimize last. Unlisted normals minimize. Current native fullscreen windows remain unchanged; saved-fullscreen/live-normal mismatches are reported without toggling. Missing runtime IDs are pruned from snapshots, never reopened. All mutations are followed by a shared bounded verification poll (50 ms, 750 ms total, two-pixel frame tolerance). Enumeration errors preserve the previous snapshot; a successful enumeration omitting a window prunes its entries.
+
+Finder now uses the proven `hs.osascript.applescript` close, 300 ms request-owned delay, and `/usr/bin/open` task with one path argument. The close has a three-second AppleScript timeout and open has a three-second helper timeout. A zero open exit is logged as an exit code, not a claim of independent visual verification. Code runs before Finder, then the unchanged Safari adapter. Errors remain isolated. The new `WARP.debugVSCodeSnapshots()` returns copies; `debugVSCodeOwnership()` remains only as a compatibility alias returning snapshots.
+
+Files changed for this replacement: `src/warp/adapters/vscode.lua`, `src/warp/adapters/finder.lua`, `src/warp/manager.lua`, `src/warp/config.lua`, `src/init.lua`, `src/warp/windows.lua` (removes the previous ownership-era minimized-frame special case), `config/workflows.lua`, `tests/vscode.lua`, `tests/finder_global.lua`, `tests/unit.lua`, `README.md`, `docs/workflow-manager.md`, and `docs/implementation-report.md`. Earlier local changes and the README logo remain preserved. No Safari implementation edits, Git commits, or pushes.
+
+Live limitations: the integrated snapshot/Finder sequence still needs acceptance on the actual desktop. Native AX may omit windows on unseen Spaces; runtime window ID reuse cannot establish persistent identity. Monitor UUIDs are recorded but not used for speculative screen reconstruction; unavailable monitor coordinates may be constrained by macOS, resulting in a verification issue. Fullscreen state is preserved rather than forced to match historical snapshots. Delivered native operations cannot be undone by request cancellation. Finder's synchronous AppleScript and macOS permission prompts may delay the main Hammerspoon thread. No exact normal-window Space placement or ordering is attempted.
+
+## Verification for the snapshot replacement
+
+`bash tests/run.sh` completed successfully: **125 Lua tests** — 28 core, 7 Finder location, 26 legacy Safari diagnostic, 35 Safari AX, 17 Code snapshot, and 12 isolated experimental COLD tests. All 32 Lua syntax checks, shell/JavaScript syntax, installer preservation, and companion transport/guard checks passed. The retained companion tests needed native temporary filesystem-watcher access. The current Finder close script compiled with `osacompile` against installed Finder terminology; it was not executed. `git diff --check` passes. Safari adapter, AX core, and diagnostic core are unchanged from HEAD.
+
+Acceptance still to run live: reload (desktop unchanged); enter a new workflow (Code unchanged); manually arrange visible/minimized/fullscreen Code windows; leave to capture; scramble normal windows in another workflow; return and verify both frames and minimized state. Repeat with GENERAL, open an extra normal window to verify absent-entry minimization, close a snapshotted window to verify pruning without reopening, and verify Finder/Safari continue through an adapter error. Tests simulate native behavior and do not certify live monitor/Space transitions or Finder's eventual displayed folder.
+
+# Historical milestone reports — superseded
+
+All ownership/adoption rules, GENERAL Code exemptions, and previous Finder mechanics below are historical.
+
+# Current milestone: GENERAL, location context, and resource preservation
+
+This section supersedes all earlier production behavior below. The new milestone changes configuration, state initialization, Code ownership/visibility, Finder context, and lifecycle while preserving the live-tested Safari AX code unchanged.
+
+GENERAL is injected if missing (default key 0), becomes the logical ACTIVE state on reload, selects Safari Local only on an explicit switch, and never adopts or changes Code visibility. Named workflows default Safari to their label, Code on, and primary to none. GENERAL's Finder defaults to home; SOFT2412 uses the exact supplied path; ELEC3609 has a TODO because historical example paths are not real configuration evidence.
+
+Finder validates the directory before a bounded AppleScript resolves the alias, closes Finder browsing windows, opens one target window, and checks the resulting count/target. It never quits Finder or intentionally closes information/desktop windows, and does not participate in ownership, layout capture, or Spaces. An error continues to later adapters. Code adoption is now 3 × 10 seconds, runtime-only and additive. Definitive destruction/identity loss prunes all owners and stale geometry/Space entries at events, switch reconciliation, and checkpoint; uncertain enumeration/access preserves live membership. Normal target windows restore useful frames, other normals minimize, and fullscreen windows stay in their existing Spaces. GENERAL changes none of that visibility.
+
+COLD is a metadata-only manager transition. No production Code companion or close/reopen instance is created; stale persisted vscodeCold intents are dropped. The experimental files remain testable in isolation. Docker is excluded from the adapter sequence/filter and its old configuration is ignored. Figma and Terminal restore remain unchanged; COLD does not call adapter hooks. Native Space IDs and Code/Finder runtime state do not enter new persistence.
+
+The README includes the user's existing `images/logo.png` without changing the image. Existing `cat.txt` and local work are preserved. No git checkout/reset/stash, commit, merge, or push is performed.
+
+## Files changed and verification
+
+- `README.md`: current usage/contract and existing `images/logo.png` display.
+- `config/workflows.lua`: GENERAL and convention-first named configuration.
+- `src/warp/config.lua`: defaults, GENERAL rules, Finder path validation and Docker migration.
+- `src/warp/manager.lua`: Finder-first sequence, reconciliation and metadata-only COLD.
+- `src/warp/adapters/finder.lua`: new bounded location-context adapter.
+- `src/warp/adapters/vscode.lua`: 30-second adoption, all-owner pruning, GENERAL/opt-out policy, safe normal/fullscreen visibility and no production companion.
+- `src/warp/ownership.lua`: Docker excluded from managed bundle discovery.
+- `src/warp/state.lua`: logical GENERAL startup and persistence exclusions.
+- `src/warp/windows.lua`: preserve useful Code geometry when minimized.
+- `tests/unit.lua`, `tests/finder_global.lua`, `tests/vscode.lua`, `tests/cold.lua`, `tests/syntax.lua`: current contract, migration, lifecycle, visibility, isolation and syntax regressions; experimental COLD tests remain isolated.
+- `docs/workflow-manager.md`, `docs/implementation-report.md`: current contract and clearly superseded historical notes.
+
+Final `bash tests/run.sh` passes: **130 Lua behavioral tests** (28 core, 6 Finder location, 26 legacy Safari diagnostic, 35 Safari AX, 23 Code, 12 isolated experimental COLD), **32 Lua syntax checks**, shell/JavaScript syntax, installer preservation, and companion transport/guard checks. Native temporary watcher access was required for the companion test. The generated Finder AppleScript also compiles successfully against the installed Finder dictionary with `osacompile`; it was not executed. Compilation required native terminology-service access. `git diff --check` passes, and all three Safari implementation files are byte-for-byte unchanged from HEAD.
+
+Live acceptance sequence: reload and confirm GENERAL ACTIVE with empty owners and unchanged desktop; explicitly select SOFT2412 and verify Finder/Safari plus initial normal Code minimization; focus a window for 30 seconds; switch to ELEC3609 and add a second/shared owner; close a shared window and checkpoint to confirm all owners are removed; select GENERAL to verify Local/home with unchanged Code visibility; mark an inactive workflow COLD and confirm no windows/resources close. ELEC3609 Finder remains skipped until its real path is configured. Check native fullscreen navigation separately.
+
+## Live acceptance still required
+
+The user already confirmed the unchanged Safari AX route works live. New Finder Automation, GENERAL startup/selection, 30-second/shared Code adoption, native fullscreen navigation, and preservation through WARM/COLD require live acceptance. No live windows are opened, closed, minimized, or switched by these tests. Finder's "Finder windows" class is intended to exclude non-browsing UI; tabbed windows, sheets, and OS-specific behavior should be checked. A running Finder script/OS action already delivered cannot be recalled by cancellation. Multiple-window Safari ambiguity remains as previously documented. MacOS AX enumeration can miss unseen Spaces after reload; WARP retains known live owners instead of treating that as closure. Existing Terminal/Figma timeout bounds may exceed the 1–5 second normal-switch target when explicitly configured.
+
+# Historical revisions — superseded by this milestone
+
+All sections below are historical. Claims about Finder being globally unmanaged, 60-second adoption, preserved COLD intents, or production close/reopen automation no longer apply.
+
 # Current Safari production path: toolbar AX picker
 
 This section supersedes all production Safari DB/shared-core descriptions in the historical revisions below. Normal workflow restore now uses `src/warp/safari_ax.lua`; `safari_debug.lua` remains only for explicit `WARP.debugSafariSwitch()` diagnostics. The debug API still reads SafariTabs.db with read-only SQLite and performs the older slow keyboard experiment. Normal switching never invokes it or requires database access. Adapter stop/replacement and WARP stop/reload cancel both paths.

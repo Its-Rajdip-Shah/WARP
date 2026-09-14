@@ -1,3 +1,4 @@
+-- Experimental module tests only: production never instantiates this close/reopen helper.
 package.path='./src/?.lua;'..package.path
 local Cold=require('warp.vscode_cold')
 local C=require('warp.config')
@@ -75,11 +76,10 @@ test('user closure cannot create cold restore intent',function()
   local c,a,store,w=fixture(); c:destroyed(w); live={}; a.dead['100:142']=true
   assert(next(c.records)==nil); c:reopen(cfg.workflows.one,{valid=function() return true end},function(errors) assert(#errors==0) end); assert(launched==0)
 end)
-test('reload preserves explicit close state but strips runtime identities',function()
+test('reload discards experimental close intents',function()
   local c,a,store=fixture(); c:close(cfg.workflows.one,store.data.workflows.one); flush()
   local r=c.records['logical-test']; r.runtimeID=142; r.layout={frame={x=0,y=0,w=1,h=1},windowID=142,pid=100}
-  local d=State.sanitize(store.data,cfg); local saved=d.shared.vscodeCold['logical-test']
-  assert(saved.state=='warp_cold_closed' and saved.runtimeID==nil and saved.layout.windowID==nil)
+  local d=State.sanitize(store.data,cfg); assert(d.shared.vscodeCold==nil and State.persistable(store.data).shared.vscodeCold==nil)
   local fresh={members={},dead={}}; assert(next(Cold.new(fresh,{data=d},identity).bindings)==nil)
 end)
 test('unmapped live window defers reopen rather than duplicates',function()

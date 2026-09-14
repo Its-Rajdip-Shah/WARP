@@ -1,3 +1,60 @@
+# Current contract: workflow resource/context restoration
+
+This contract supersedes all snapshot-only, ownership, and reload-neutral descriptions below. The fixed production adapter set is VS Code, Finder, Safari, Terminal, Figma, and Docker UI. Resources may be shared; each adapter controls its own identity/restore semantics.
+
+- Code: independent visibility and restore presentation preserve fullscreen intent while minimized. Capture of a visible normal window records normal user curation; unfinished restore targets protect same-workflow/interrupted capture from intermediate native states. Unminimization must complete before fullscreen entry. Code restores resources serially through verification to avoid overlapping native fullscreen transitions; cancellation abandons the remaining queue. Workflow resource maps keyed by verified companion folder/workspace descriptors plus independent presentation. Unknown descriptors use runtime-only fallback. First-use exposes normal Code candidates; explicit configured flags distinguish empty captured maps. Configured departure merges live updates and retains absent descriptor resources with their last presentation. First capture contains only currently live resources. Missing visible/fullscreen descriptors can reopen and bind only after verification; minimized-only entries never reopen. Irrelevant normals minimize; irrelevant fullscreen windows remain fullscreen. Relevant resources actively restore the target presentation, including exiting fullscreen before frame/minimize and entering fullscreen after unminimize. Poll native transitions every 50 ms with a two-second timeout, then verify normal presentation for up to 750 ms. Errors are isolated per window; no resource is automatically closed.
+- General/reload: reset runtime resource state, activate GENERAL, and begin curation. Invoke unchanged Safari Local and Finder directory refresh. This intentionally replaces desktop-neutral reload.
+- Safari: protected native AX Tab Group path, unchanged parsing, order, routing, readiness, keys, and verification. No generic window model.
+- Finder: protected close-browsing-windows → 300 ms → argument-array `/usr/bin/open` path. SOFT2412 retains the supplied directory; ELEC3609 remains TODO.
+- Terminal: existing tmux/session adapter unchanged; no new session/window architecture.
+- Figma: declared shared UI contexts, unique live-title matching, irrelevant normals minimized. No reliable exact document reopen identity; unknown/ambiguous/missing documents are preserved or reported rather than fabricated.
+- Docker: declared Desktop UI context, relevant restore/launch and irrelevant minimize. No engine/container/image/volume/Compose commands or app quit.
+- Manager: refresh descriptor inventory, capture departure, activate target, restore adapters independently, rebuild runtime Spaces. Request cancellation stops stale work. COLD remains metadata-only. Focus observation is for descriptors, never qualification/ownership.
+
+No normal Space movement/reordering, app-wide hide/show, owner sets, adoption loops, destructive COLD, or production companion close requests. Resource reopening uses only verified local descriptors and refuses ambiguous duplicate situations. The [README](../README.md) covers companion installation and practical limitations; the [implementation report](implementation-report.md) records validation.
+
+# Historical contracts — not current behavior
+
+Everything below describes earlier milestones. In particular, runtime-ID-only snapshots, no-reopen rules, GENERAL exemptions, ownership timers, and desktop-neutral reload are obsolete.
+
+# Current contract: runtime VS Code snapshots
+
+This contract supersedes all ownership/adoption descriptions below. WARP remembers per-workflow window state, not owners. See the [README](../README.md) for current usage and the [implementation report](implementation-report.md) for tests and limitations.
+
+1. On A → B, capture all enumerated live Code windows into A's runtime snapshot: ID, minimized/fullscreen flags, pixel frame, and screen UUID. Prune missing entries. WARM/COLD remain metadata-only.
+2. Set B active and restore Code first. No snapshot means no Code rearrangement; the first capture happens only on departure. For an existing snapshot, restore visible normals with unminimize/setFrame, and minimized normals with unminimize/setFrame/minimize. Normal windows absent from the snapshot minimize. Closed windows never reopen.
+3. Preserve live native fullscreen windows without toggles, including absent windows. A saved fullscreen window now normal stays untouched with an error. Do not move/reorder normal-window Spaces or hide/show the whole Code app.
+4. Verify the Code batch at 50 ms intervals for at most 750 ms. Read back minimized state and frame (two-pixel tolerance), and report failures independently.
+5. Finder validates its configured path, closes browsing windows with the proven AppleScript, waits 300 ms, and opens the path using `/usr/bin/open` argument-array task invocation. No Finder quit or snapshot. Missing path/close/open errors do not stop later adapters.
+6. Invoke the unchanged Safari AX Tab Group adapter, then existing safe adapters and Space registry handling. GENERAL uses Safari Local and its home/default Finder path, and is an ordinary Code snapshot workflow.
+7. Reload logically activates GENERAL with no snapshots and no desktop restore. No focus timers, adoption watchers, owner sets, or production companion close/reopen path remain. Manual/finish/inactive checkpoints do not recapture Code. All snapshots are runtime-only.
+
+Named workflows still derive Safari from label, enable Code snapshots, and default primary to none. SOFT2412 retains the supplied directory; ELEC3609 Finder remains TODO. Docker, ChatGPT, Spotify, and other globals remain untouched. Latency goal remains roughly 1–5 seconds, subject to native response times and configured legacy adapters.
+
+# Historical contracts — ownership and adoption are obsolete
+
+All following contracts/design notes are retained as history, including the previous GENERAL exemption, focus adoption rules, and earlier Finder implementations. They do not describe the current snapshot implementation.
+
+# Current contract: GENERAL and preserved workflow resources
+
+This contract supersedes every earlier design/implementation section below, including Finder-global, 60-second adoption, and destructive COLD descriptions. The [README](../README.md) describes configuration and operation; the [implementation report](implementation-report.md) records verification and limitations.
+
+- GENERAL (`general`, default selector `0`) is a real workflow. Reload resets runtime Code ownership and logically activates GENERAL without calling any adapter restore or rearranging the desktop.
+- Named workflows derive Safari from `label`, enable Code adoption by default, and default primary to `none`. Explicit named overrides/opt-outs remain supported. GENERAL always selects Safari Local when explicitly invoked, never owns Code, and applies no Code visibility policy. It defaults Finder to the home directory.
+- Finder is a per-workflow location context: validate/resolve the configured directory, close Finder browsing windows, and open one window at the target on each explicit switch/reselection. No Finder ownership, layouts, checkpointing, or Space records. Missing paths fail only this adapter. No ELEC3609 path is invented.
+- Code adoption requires three uninterrupted ten-second focus checks under the same named workflow/window identity. Owners are additive, may be shared, and survive minimization, app/focus/title changes, and switching. Candidate timers stop on interruption; no idle qualification loop.
+- Switch/checkpoint reconciliation removes definitively destroyed or invalid runtime windows from all owners, including their geometry and Space entries. Enumeration absence or uncertain AX access alone preserves membership.
+- Named activation restores target-owned normal Code windows and minimizes all other normal Code windows. Useful manual frames survive WARP minimization. Fullscreen Code windows remain fullscreen in native Spaces regardless of lifecycle, and target-owned fullscreen Spaces remain navigable. GENERAL leaves Code visibility unchanged, including earlier minimization.
+- WARM/COLD preserve resources. COLD is metadata-only and never invokes adapter close/quit hooks. Production never constructs the experimental Code companion/close/reopen path; old persisted intents are dropped. Docker UI/backend/containers, ChatGPT, Spotify, and utilities remain global. No new tmux switching or Figma redesign.
+- Safari AX parsing, picker order, shortest route, background readiness, key timing, and bounded verification are unchanged. Missing native target groups fail only Safari, without reconstruction.
+- Switch order: cancel stale work, reconcile, checkpoint outgoing state, mark outgoing WARM and target ACTIVE, refresh Finder, switch Safari, converge Code, run existing safe Terminal/Figma restore, rebuild Spaces, finish. Failures are isolated; generation cancellation remains authoritative.
+- Persistence excludes Code/Finder runtime identities, Code owners/layouts, old Code COLD intents, and native Space IDs. Reload never restores Code ownership.
+- Performance goal: roughly 1–5 seconds normally, 5–10 seconds acceptable; configured legacy adapters and macOS permission/Space delays can exceed the target. No live performance guarantee is claimed.
+
+# Historical design and implementation notes — not the current contract
+
+All content below is retained as historical background. In particular, old Finder-global rules, companion installation instructions, COLD close/reopen behavior, and earlier Safari mechanisms do not describe production.
+
 # Current MVP switching contract
 
 This section supersedes older Safari/VS Code implementation sketches below. Any configured-root ownership, title-marker ownership, or recorded-root reopening examples in those historical sketches are obsolete.

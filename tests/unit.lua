@@ -5,11 +5,11 @@ local U=require('warp.util')
 local C=require('warp.config')
 local function basic() return {one={label='One',key='1',vscode=true},two={label='Two',key='2'}} end
 local cfg=assert(C.validate(basic()))
-for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do assert(require('warp.adapters.'..name).new) end
+for _,name in ipairs({'finder','safari','vscode','terminal','figma','docker'}) do assert(require('warp.adapters.'..name).new) end
 local logs={}
 hs={fs={attributes=function() return nil end},json={},timer={},application={},spaces={},screen={},window={},eventtap={}}
-test('configuration: defaults, stable IDs, dynamic VS Code opt-in',function() assert(cfg.list[1].id=='one'); assert(cfg.workflows.one.coldAfterMinutes==30); assert(cfg.workflows.one.vscode==true) end)
-test('configuration: empty list allowed',function() assert(#assert(C.validate({})).list==0) end)
+test('configuration: defaults, stable IDs, dynamic VS Code opt-in',function() assert(cfg.list[1].id=='general'); assert(cfg.workflows.one.coldAfterMinutes==30); assert(cfg.workflows.one.vscode==true) end)
+test('configuration: GENERAL added to empty config',function() assert(#assert(C.validate({})).list==1) end)
 test('configuration: duplicate number, nonnumeric, unknown global app rejected',function()
   local b=basic(); b.two.key='1'; assert(not C.validate(b)); b.two.key='C'; assert(not C.validate(b)); b=basic(); b.one.apps={{id='chatgpt'}}; assert(not C.validate(b))
 end)
@@ -22,6 +22,18 @@ test('configuration: duplicate tmux and chord collision rejected',function()
   local b=basic(); b.one.terminal={tmuxSession='same'}; b.two.terminal={tmuxSession='same'}; assert(not C.validate(b))
   assert(not C.validate(basic(),{navigation={mods={'ctrl','alt','cmd'},next='right',previous='left'}}))
 end)
+test('conventions derive Safari and Code with explicit compatible overrides',function()
+  local c=assert(C.validate({one={label='One',key='1',finder='/tmp'},two={label='Two',key='2',safari=false,vscode=false}}))
+  assert(c.workflows.one.safari.tabGroup=='One' and c.workflows.one.vscode and c.workflows.one.primary=='none')
+  assert(c.workflows.general.safari.tabGroup=='Local' and c.workflows.general.vscode)
+  assert(c.workflows.two.safari==false and c.workflows.two.vscode==false)
+  c=assert(C.validate({one={label='One',key='1',safari={tabGroup='Override'},primary='safari'}}))
+  assert(c.workflows.one.safari.tabGroup=='Override' and c.workflows.one.primary=='safari')
+end)
+test('Docker UI config is retained independently of backend',function()
+  local c=assert(C.validate({one={label='One',key='1',apps={{id='docker'}},primary='docker'}}))
+  assert(#c.workflows.one.apps==1 and c.workflows.one.primary=='docker' and require('warp.ownership').bundles.docker)
+end)
 test('fixed-root ownership helpers removed',function()
   local O=require('warp.ownership'); assert(O.owner==nil and O.vscodePath==nil)
 end)
@@ -29,7 +41,7 @@ test('shell and AppleScript quoting',function() assert(U.quote("a'b") == "'a'\\'
 local State=require('warp.state')
 test('state recovery: one ACTIVE, stale window/Space IDs discarded',function()
   local d=State.sanitize({version=1,active='two',workflows={one={lifecycle='ACTIVE',windows={a={adapter='terminal',identity='a',windowID=12,spaceIDs={5}}}},two={lifecycle='ACTIVE'}}},cfg)
-  assert(d.workflows.one.lifecycle=='WARM' and d.workflows.two.lifecycle=='ACTIVE'); assert(not d.workflows.one.windows.a.windowID and #d.workflows.one.spaces==0)
+  assert(d.workflows.one.lifecycle=='WARM' and d.workflows.two.lifecycle=='WARM' and d.active=='general' and d.workflows.general.lifecycle=='ACTIVE'); assert(not d.workflows.one.windows.a.windowID and #d.workflows.one.spaces==0)
 end)
 test('invalid state schema/frames rejected',function()
   assert(not pcall(State.sanitize,{version=2},cfg))
@@ -123,9 +135,9 @@ test('wheel interaction: selection, release, Escape, letters, cleanup, dynamic c
   flags={}; wheel.flagsTap.fn(event()); flags={ctrl=true,alt=true,cmd=true}; wheel.flagsTap.fn(event()); assert(wheel.keyTap.fn(event(2))==true)
   flags={}; wheel.flagsTap.fn(event()); flags={ctrl=true,alt=true,cmd=true}; wheel.flagsTap.fn(event()); flags={ctrl=true}; wheel.flagsTap.fn(event()); assert(not wheel.visible)
   wheel:stop(); assert(not wheel.flagsTap.active and not wheel.keyTap.active)
-  local many={}; for i=0,9 do many['w'..i]={label='Workflow '..i,key=tostring(i)} end
+  local many={}; for i=0,9 do many[i==0 and 'general' or ('w'..i)]={label='Workflow '..i,key=tostring(i)} end
   wheel=require('warp.wheel').new(assert(C.validate(many)),function() end); wheel:show(); assert(#wheel.canvas.elements==33); wheel:stop()
-  wheel=require('warp.wheel').new(assert(C.validate({})),function() end); wheel:show(); assert(not wheel.visible); wheel:stop()
+  wheel=require('warp.wheel').new(assert(C.validate({})),function() end); wheel:show(); assert(wheel.visible); wheel:stop()
 end)
 test('fullscreen restoration migrates displays and registers only new Space',function()
   local main={getUUID=function() return 'main' end,frame=function() return {x=0,y=0,w=1000,h=700} end}
@@ -146,10 +158,10 @@ end)
 local originalState=package.loaded['warp.state']
 package.loaded['warp.state']={new=function(config) local store={data=State.sanitize({version=1,workflows={}},config)}; function store:save() return true end; return store end}
 local restored={}
-for _,name in ipairs({'safari','vscode','terminal','figma','docker'}) do
+for _,name in ipairs({'finder','safari','vscode','terminal','figma','docker'}) do
   package.loaded['warp.adapters.'..name]={new=function() return {id=name,discover=function() return {} end,restore=function(_,w,_,ctx,done)
-    ctx:after(0.5,function() restored[#restored+1]=w.id..':'..name; if name=='figma' then done(false,'unavailable') else done(true) end end)
-  end,cold=function() end} end}
+    ctx:after(0.5,function() restored[#restored+1]=w.id..':'..name; if name=='figma' or (name=='finder' and w.finder=='/missing') then done(false,'unavailable') else done(true) end end)
+  end,cold=function() error('COLD must not call adapters') end} end}
 end
 hs.accessibilityState=function() return true end
 hs.spaces.spaceType=function() return 'user' end
@@ -165,6 +177,31 @@ test('manager rapid switch, partial failure, single ACTIVE and lifecycle',functi
   assert(m:makeCold('one')); assert(m.store.data.workflows.one.lifecycle=='COLD'); assert(not m:makeCold('two'))
   m:stop(); assert(not m:switchTo('one')); flush()
 end)
+test('Finder failure is isolated; GENERAL explicitly targets Local; Docker UI adapter included',function()
+  local c=assert(C.validate({one={label='One',key='1',finder='/missing'}}))
+  local m=require('warp.manager').new(c);local seen={}
+  for _,a in ipairs(m.adapters) do
+    assert(a.id~='chatgpt')
+    if a.id=='safari' then
+      a.restore=function(_,w,_,_,done) seen[#seen+1]=w.safari.tabGroup;done(true) end
+    end
+  end
+  restored={};assert(m:switchTo('one'));flush()
+  assert(not m.switching and seen[1]=='One' and m.errors[1]:find('finder restore'))
+  local codeRan=false;for _,entry in ipairs(restored) do if entry=='one:vscode' then codeRan=true end end;assert(codeRan)
+  assert(m:switchTo('general'));flush();assert(seen[2]=='Local')
+  m:stop()
+end)
+test('persistence strips runtime Space IDs and old close intents without mutating live state',function()
+  local d=State.sanitize({version=1,shared={vscodeCold='obsolete'},workflows={}},cfg)
+  assert(not d.shared.vscodeCold)
+  d.shared.vscodeCold={old={state='close_requested'}}
+  d.workflows.one.windows.safe={adapter='terminal',identity='session',windowID=12,pid=3,spaceIDs={99},frame={x=0,y=0,w=1,h=1}}
+  d.workflows.one.spaces={{role='safari',id=99}}
+  local saved=State.persistable(d)
+  assert(not saved.shared.vscodeCold and #saved.workflows.one.spaces==0 and not saved.workflows.one.windows.safe.windowID and not saved.workflows.one.windows.safe.pid and not saved.workflows.one.windows.safe.spaceIDs)
+  assert(d.workflows.one.windows.safe.windowID==12 and #d.workflows.one.spaces==1 and d.shared.vscodeCold)
+end)
 test('manager start/stop cycles clean owned taps, filter, watcher, hotkeys and timer',function()
   local filters,watchers,keys,periodic,menus={},{},{},{},{}
   hs.window.filter={windowCreated='created',windowDestroyed='destroyed',new=function()
@@ -178,7 +215,9 @@ test('manager start/stop cycles clean owned taps, filter, watcher, hotkeys and t
   hs.menubar={new=function() local m={}; function m:setTitle() return self end; function m:setMenu(fn) self.fn=fn; return self end; function m:delete() self.deleted=true end; menus[#menus+1]=m; return m end}
   hs.alert={show=function() end}
   for _=1,2 do
-    local m=require('warp.manager').new(cfg); m:start(); assert(m.wheel.flagsTap.active); assert(#m.menu.fn()>0)
+    local before=#restored
+    local m=require('warp.manager').new(cfg); m:start(); assert(m.store.data.active=='general' and m.store.data.workflows.general.lifecycle=='ACTIVE' and #restored==before); assert(m.wheel.flagsTap.active); assert(#m.menu.fn()>0)
+    flush();assert(#restored==before+6 and m.store.data.active=='general' and not m.switching)
     m:stop(); m:stop(); assert(not m.wheel.flagsTap.active and not m.wheel.keyTap.active)
   end
   for _,f in ipairs(filters) do assert(f.paused and not f.subscribed) end

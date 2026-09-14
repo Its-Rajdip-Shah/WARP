@@ -7,6 +7,7 @@ function M.start()
   if filter then return end
   local allowed={}; for _,bundle in pairs(O.bundles) do allowed[bundle]=true end
   filter=hs.window.filter.new(function(win)
+    if not win then return false end
     local app=win:application()
     return app and allowed[app:bundleID()] and win:isStandard()
   end)
